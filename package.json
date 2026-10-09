@@ -13,7 +13,9 @@
     "smoke:mock:rls": "node scripts/smoke-with-mock.mjs --rls-error",
     "smoke:mock:notable": "node scripts/smoke-with-mock.mjs --missing-table",
     "smoke:mock:rpcopen": "node scripts/smoke-with-mock.mjs --rpc-open",
-    "verify": "npm run typecheck && npm run smoke:mock && npm run smoke:mock:rls && npm run smoke:mock:notable && npm run smoke:mock:rpcopen"
+    "assets:generate": "node scripts/generate-assets.mjs",
+    "assets:verify": "node scripts/verify-assets.mjs",
+    "verify": "npm run typecheck && npm run smoke:mock && npm run smoke:mock:rls && npm run smoke:mock:notable && npm run smoke:mock:rpcopen && npm run build && npm run assets:verify"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",

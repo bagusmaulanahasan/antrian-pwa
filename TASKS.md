@@ -9,9 +9,11 @@ Status: ⬜ belum · 🟨 dikerjakan · ✅ selesai (lolos verifikasi) · ⚠️
 
 ## Infrastruktur & konfigurasi
 
-- ⬜ **T01** Fix bug reachability di `diagnostics.ts` (HTTP 401 dari `/rest/v1/` dianggap gagal, padahal server terjangkau)
-- ⬜ **T02** Tambah pemeriksaan kebocoran grant: RPC callable oleh anon
-- ⬜ **T03** Buat `public/` — ikon PWA 192/512, favicon, robots.txt
+- ✅ **T01** Fix bug reachability di `diagnostics.ts` (HTTP 401 dari `/rest/v1/` dianggap gagal)
+      → commit `238de2a`, diverifikasi ke project nyata (11 kartu, bukan 3)
+- ✅ **T02** Tambah pemeriksaan kebocoran grant: RPC callable oleh anon
+      → mendeteksi kebocoran nyata di `next_queue_number`, commit `238de2a`
+- 🟨 **T03** Buat `public/` — ikon PWA 192/512, favicon, robots.txt
 - ⬜ **T04** Tool generate hash argon2id + seed owner
 - ⬜ **T05** `wrangler.toml` + Worker `/api/health`
 - ⬜ **T14** `wrangler deploy` ke workers.dev + dokumentasi
