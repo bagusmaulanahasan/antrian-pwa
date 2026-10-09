@@ -1,0 +1,36 @@
+{
+  "name": "antrian-pwa",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "typecheck": "vue-tsc --noEmit",
+    "preview": "vite preview",
+    "smoke": "node scripts/smoke-test.mjs",
+    "smoke:mock": "node scripts/smoke-with-mock.mjs",
+    "smoke:mock:rls": "node scripts/smoke-with-mock.mjs --rls-error",
+    "smoke:mock:notable": "node scripts/smoke-with-mock.mjs --missing-table",
+    "smoke:mock:rpcopen": "node scripts/smoke-with-mock.mjs --rpc-open",
+    "verify": "npm run typecheck && npm run smoke:mock && npm run smoke:mock:rls && npm run smoke:mock:notable && npm run smoke:mock:rpcopen"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.0",
+    "lucide-vue-next": "^0.460.0",
+    "vue": "^3.3.11",
+    "vue-router": "^4.6.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@vitejs/plugin-vue": "^4.5.2",
+    "autoprefixer": "^10.4.16",
+    "postcss": "^8.4.32",
+    "puppeteer-core": "^23.11.1",
+    "tailwindcss": "^3.4.0",
+    "typescript": "~5.6.3",
+    "vite": "^5.0.0",
+    "vite-plugin-pwa": "^0.17.4",
+    "vue-tsc": "^2.2.12"
+  }
+}
