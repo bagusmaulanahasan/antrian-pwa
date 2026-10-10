@@ -19,7 +19,6 @@ Status: ⬜ belum · 🟨 dikerjakan · ✅ selesai (lolos verifikasi) · ⚠️
       → commit `b933b9c`
 - ✅ **T05** `wrangler.toml` + Worker `/api/health`
       → `worker/` sebagai package terpisah, `/api/health` OK
-- ⬜ **T14** `wrangler deploy` ke workers.dev + dokumentasi
 
 ## Autentikasi
 
@@ -46,7 +45,35 @@ Status: ⬜ belum · 🟨 dikerjakan · ✅ selesai (lolos verifikasi) · ⚠️
 
 ## Dashboard TV
 
-- ⬜ **T13** Dashboard TV: realtime + PIN + pengumuman suara
+- ✅ **T13** Dashboard TV: PIN, realtime + polling, pengumuman suara
+      → 26 E2E + 15 unit test
+- ⬜ **T14** `wrangler deploy` ke workers.dev + dokumentasi
+
+## Catatan T13 — Dashboard TV
+
+**PIN TV bukan rahasia.** PRD menyebutnya "verifikasi ringan"; keamanan data
+sesungguhnya datang dari policy RLS yang hanya mengizinkan SELECT lewat anon
+key. PIN mencegah layar tampil tanpa disengaja di depan pelanggan, dan diambil
+dari `VITE_TV_PIN` (di-inline saat build) supaya bisa diganti per deployment
+tanpa menyentuh kode. Tanpa PIN yang dikonfigurasi, layar **tidak terbuka**
+sama sekali — membuka bebas lebih buruk daripada menampilkan pesan konfigurasi.
+
+**Realtime punya jaring pengaman polling.** Realtime bisa "diam": tidak error
+juga tidak SUBSCRIBED — misalnya `queue_entries` belum masuk publication, atau
+WebSocket diblokir firewall. Tanpa batas waktu, badge akan menampilkan
+"Menghubungkan…" selamanya padahal polling sedang bekerja. Karena itu ada
+fallback 6 detik ke status "Terhubung (penyegaran berkala)" — jujur soal
+keadaan, dan data tetap masuk.
+
+**Suara hanya berjalan setelah ada interaksi.** Kebijakan autoplay browser
+menuntut klik pengguna, jadi TV menampilkan tombol "Aktifkan Suara". Chrome
+membatalkan suara pada halaman tak terlihat; TV sering disembunyikan, jadi
+antrean diulang saat halaman kembali terlihat. Pengumuman hanya dipicu saat
+*nomor serving berubah* — bukan tiap render — supaya tidak berulang tiap polling.
+
+**Tidak terverifikasi otomatis:** kualitas suara aktual di perangkat TV (bukan
+headphone). Yang terverifikasi adalah pemicu pengumuman, urutan antrean, dan
+perilaku saat halaman gagal memuat data.
 
 ## Catatan T11 — printer thermal
 

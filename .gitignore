@@ -19,6 +19,7 @@ dev-dist/
 smoke-artifacts/
 dist-e2e/
 dist-e2e-admin/
+dist-e2e-tv/
 
 # Logs
 *.log
