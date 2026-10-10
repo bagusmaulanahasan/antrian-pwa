@@ -249,9 +249,9 @@ export async function createUser(
       password_hash: passwordHash,
       role: input.role,
       display_name: input.displayName ?? null,
-      // Password baru dari owner SELALU sementara: admin wajib menggantinya
-      // saat login pertama. Ini mencegah owner lupa dengan akun yang
-      // dibuat lewat dashboard.
+// Password baru dari owner SELALU sementara: admin wajib menggantinya
+      // saat login pertama. Ini mencegah owner lupa dengan akun yang dibuat
+      // lewat dashboard.
       is_password_temporary: true,
     })
     .select(
