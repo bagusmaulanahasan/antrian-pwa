@@ -58,14 +58,14 @@ export interface ApiBase {
  * dan tidak ada bearer token yang tersimpan di sisi browser.
  */
 export async function apiRequest<T>(path: string, options: ApiBase = {}): Promise<T> {
-  const base = apiBaseUrl()
-  if (!base) {
+  if (!isApiConfigured()) {
     throw new ApiError(
       'Worker API belum dikonfigurasi. Isi VITE_API_BASE_URL lalu build ulang aplikasi.',
       0,
       'api_not_configured',
     )
   }
+  const base = apiBaseUrl()
 
   const { method = 'GET', body, signal } = options
 
