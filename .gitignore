@@ -16,6 +16,7 @@ dev-dist/
 !.dev.vars.example
 
 # Test artifacts
+template/
 smoke-artifacts/
 dist-e2e/
 dist-e2e-admin/

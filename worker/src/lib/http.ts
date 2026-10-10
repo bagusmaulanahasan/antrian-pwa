@@ -155,7 +155,7 @@ export function buildCookie(
   opts: { maxAge?: number; secure?: boolean; httpOnly?: boolean; path?: string } = {},
 ): string {
   const { maxAge = 0, secure = true, httpOnly = true, path = '/' } = opts
-  const parts = [`${name}=${encodeURIComponent(value)}`, `Path=${path}`, `SameSite=None`]
+  const parts = [`${name}=${encodeURIComponent(value)}`, `Path=${path}`, `SameSite=Lax`]
   if (httpOnly) parts.push('HttpOnly')
   if (secure) parts.push('Secure')
   if (maxAge > 0) parts.push(`Max-Age=${maxAge}`)
