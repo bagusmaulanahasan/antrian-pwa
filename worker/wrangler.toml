@@ -1,0 +1,21 @@
+name = "antrian-api"
+main = "src/index.ts"
+compatibility_date = "2024-11-11"
+compatibility_flags = ["nodejs_compat"]
+
+# Password di-hash dengan @noble/hashes (JS murni + WebCrypto).
+# Alasannya Workers tidak bisa memuat addon native .node, dan build WASM
+# @node-rs/argon2 gagal di runtime dengan:
+#   "[unenv] wasi.WASI is not implemented yet!"
+# Argon2 dihitung sinkron sehingga handler menambahkan `waitUntil` kecil.
+
+# Secrets (JANGAN taruh di file ini — set via `wrangler secret put`):
+#   SUPABASE_URL
+#   SUPABASE_SERVICE_ROLE_KEY
+#   JWT_ACCESS_SECRET
+
+[observability]
+enabled = true
+
+[vars]
+ALLOWED_ORIGIN = "*"

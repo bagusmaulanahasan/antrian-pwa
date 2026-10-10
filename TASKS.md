@@ -13,14 +13,18 @@ Status: ⬜ belum · 🟨 dikerjakan · ✅ selesai (lolos verifikasi) · ⚠️
       → commit `238de2a`, diverifikasi ke project nyata (11 kartu, bukan 3)
 - ✅ **T02** Tambah pemeriksaan kebocoran grant: RPC callable oleh anon
       → mendeteksi kebocoran nyata di `next_queue_number`, commit `238de2a`
-- 🟨 **T03** Buat `public/` — ikon PWA 192/512, favicon, robots.txt
-- ⬜ **T04** Tool generate hash argon2id + seed owner
-- ⬜ **T05** `wrangler.toml` + Worker `/api/health`
+- ✅ **T03** `public/` — ikon PWA 192/512 + maskable, favicon, robots
+      → commit `f352733`, 25 cek aset lulus
+- ✅ **T04** Utilitas argon2id + CLI hash password + 10 unit test
+      → commit `b933b9c`
+- ✅ **T05** `wrangler.toml` + Worker `/api/health`
+      → `worker/` sebagai package terpisah, `/api/health` OK
 - ⬜ **T14** `wrangler deploy` ke workers.dev + dokumentasi
 
 ## Autentikasi
 
-- ⬜ **T06** Worker API: login + refresh + verifikasi argon2id
+- ✅ **T06** Worker API: login + refresh + logout + ganti password + argon2id
+      → 51/51 integration test (workerd asli + mock PostgREST)
 - ⬜ **T07** Halaman login + store auth (frontend)
 - ⬜ **T08** Force ganti password saat `is_password_temporary`
 - ⬜ **T09** Route guard per role + layout dashboard
@@ -60,3 +64,38 @@ Hasil pemeriksaan langsung (di luar browser, via REST API):
 
 Kesimpulan: `schema.sql` pernah dijalankan (tabel ada) tetapi blok **seed** belum dieksekusi.
 Nilai kosong di `settings`/`users` konsisten dengan `schema.sql:151-169` belum dijalankan.
+
+---
+
+## Catatan teknis
+
+### argon2id di Cloudflare Workers
+
+`@node-rs/argon2` **tidak bisa dipakai** di Workers:
+
+1. Addon native (`.node`) tidak didukung runtime Workers.
+2. Build WASM-nya (`@node-rs/argon2-wasm32-wasi`) gagal saat runtime dengan
+   `[unenv] wasi.WASI is not implemented yet!` — produksi hash tetap jalan
+   (WASM bisa di-*bundle*), tapi `verify` selalu `false`, sehingga **seluruh
+   login ditolak** tanpa error yang mencolok.
+
+Diganti ke `@noble/hashes/argon2.js` (JS murni). Hash yang dihasilkan
+byte-identik dengan argon2id standar, dibuktikan oleh unit test
+"kompatibel dengan hash argon2id standar" yang memverifikasi fixture yang
+dihasilkan implementasi lain.
+
+Catatan: subpath export `@noble/hashes` hanya mendefinisikan `./argon2.js` dan
+`./utils.js` — ekstensi `.js` **wajib** ditulis, kalau tidak Node melempar
+`ERR_PACKAGE_PATH_NOT_EXPORTED`.
+
+### Set-Cookie harus header terpisah
+
+Menggabungkan dua cookie dengan `join(', ')` menghasilkan satu header
+`Set-Cookie` berisi koma. Browser mengurai itu sebagai satu cookie dengan
+atribut tambahan, sehingga cookie kedua hilang. `json()` kini menerima array
+`extraSetCookies` yang di-`append` satu per satu.
+
+### Verifikasi token
+
+`alg:none` ditolak eksplisit, dan perbandingan signature memakai
+constant-time untuk mengurangi risiko timing attack.

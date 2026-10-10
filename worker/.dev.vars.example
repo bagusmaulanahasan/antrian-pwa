@@ -1,0 +1,12 @@
+# Secret lokal untuk `wrangler dev`. Salin file ini menjadi `.dev.vars` lalu isi.
+# JANGAN commit .dev.vars (sudah masuk .gitignore).
+
+# --- Wajib ---
+SUPABASE_URL=https://xxxx.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=
+
+# Minimal 32 karakter. Bangkit dengan: openssl rand -base64 48
+JWT_ACCESS_SECRET=
+
+# --- Opsional ---
+ALLOWED_ORIGIN=*

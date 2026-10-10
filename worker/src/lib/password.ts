@@ -1,73 +1,149 @@
 /**
- * Utilitas hashing password argon2id.
+ * Hashing password argon2id — implementasi murni JS (portable).
  *
- * Modul ini dipakai oleh BOTH sisi:
- *  - Cloudflare Worker (server) untuk memverifikasi login
- *  - Script CLI (`scripts/hash-password.mjs`) untuk membuat akun owner/admin
+ * Kenapa bukan @node-rs/argon2:
+ *   Workers tidak bisa memuat addon native (.node), dan build WASM-nya gagal
+ *   di runtime Workers dengan error:
+ *     "[unenv] wasi.WASI is not implemented yet!"
+ *   `@noble/hashes` adalah JS murni, memakai WebCrypto yang tersedia di
+ *   Workers maupun browser, dan menghasilkan hash yang identik dengan
+ *   argon2id standar (terverifikasi terhadap fixture).
  *
- * Format hash mengikuti PHC standard:
- *   $argon2id$v=19$m=19456,t=2,p=1$<salt base64>$<hash base64>
- * yang persis cocok dengan placeholder di schema.sql.
+ * Format PHC yang didukung (sama dengan yang dipakai schema.sql):
+ *   $argon2id$v=19$m=<mem>,t=<iter>,p=<par>$<salt-b64>$<hash-b64>
  *
- * Catatan: @node-rs/argon2 memakai prebuilt WASM/native sehingga aman
- * dipakai di runtime Cloudflare Workers.
+ * Password di-hash sebagai UTF-8 bytes.
  */
+// Subpath export @noble/hashes hanya mendefinisikan "./argon2.js"/"./utils.js",
+// jadi ekstensi .js wajib ditulis (tanpa itu Node ERR_PACKAGE_PATH_NOT_EXPORTED).
+import { argon2id as nobleArgon2id } from '@noble/hashes/argon2.js'
+import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js'
 
-/** Parameter default — sama dengan nilai di schema.sql. */
+/** Parameter default — sama dengan nilai yang diasumsikan schema.sql. */
 export const ARGON2_DEFAULTS = {
-  algorithm: 2, // Argon2id
+  algorithm: 'argon2id',
   memoryCost: 19456, // 19 MiB
   timeCost: 2,
   parallelism: 1,
   outputLen: 32,
 } as const
 
-/**
- * Hash password dengan argon2id.
- * @param {string} password
- * @param {Partial<typeof ARGON2_DEFAULTS>} [options]
- * @returns {Promise<string>} hash berformat PHC
- */
-export async function hashPassword(password, options = {}) {
-  if (typeof password !== 'string' || password.length === 0) {
-    throw new Error('password wajib berupa string non-kosong')
-  }
-  const { hash } = await import('@node-rs/argon2')
-  // @node-rs/argon2 memakai nama opsiVersus (bukan algorithm/memoryCost).
-  return hash(password, {
-    algorithm: options.algorithm ?? ARGON2_DEFAULTS.algorithm,
-    memoryCost: options.memoryCost ?? ARGON2_DEFAULTS.memoryCost,
-    timeCost: options.timeCost ?? ARGON2_DEFAULTS.timeCost,
-    parallelism: options.parallelism ?? ARGON2_DEFAULTS.parallelism,
-    outputLen: options.outputLen ?? ARGON2_DEFAULTS.outputLen,
-  })
+export interface Argon2Options {
+  memoryCost?: number
+  timeCost?: number
+  parallelism?: number
+  outputLen?: number
 }
 
 /**
- * Verifikasi password terhadap hash.
+ * PHC string. Base64 di sini menerima varian standar maupun base64url
+ * (seperti yang dihasilkan @node-rs/argon2), supaya hash dari implementasi
+ * berbeda tetap bisa diverifikasi.
+ */
+const PHC_PATTERN =
+  /^\$(argon2id|argon2i|argon2d)\$v=(\d+)\$m=(\d+),t=(\d+),p=(\d+)\$([A-Za-z0-9+/_-]+={0,2})\$([A-Za-z0-9+/_-]+={0,2})$/
+
+/** Base64 (standar maupun base64url) → Uint8Array. */
+function fromBase64(value: string): Uint8Array {
+  // Normalisasi base64url → base64 standar.
+  const normalized = value.replace(/-/g, '+').replace(/_/g, '/')
+  const binary = atob(normalized)
+  const out = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i)
+  return out
+}
+
+/**
+ * Uint8Array → base64 standar tanpa padding (kelakuan PHC).
+ * PHC memakai base64 biasa (bukan base64url) dan mengizinkan karakter
+ * `-`/`_` dari implementasi lain, jadi `fromBase64` harus keduanya menerima.
+ */
+function toBase64(bytes: Uint8Array): string {
+  let binary = ''
+  for (const b of bytes) binary += String.fromCharCode(b)
+  return btoa(binary).replace(/=+$/, '')
+}
+
+/**
+ * Hash password dengan argon2id.
+ * @throws bila password bukan string non-kosong.
+ */
+export async function hashPassword(
+  password: string,
+  options: Argon2Options = {},
+): Promise<string> {
+  if (typeof password !== 'string' || password.length === 0) {
+    throw new Error('password wajib berupa string non-kosong')
+  }
+
+  const memoryCost = options.memoryCost ?? ARGON2_DEFAULTS.memoryCost
+  const timeCost = options.timeCost ?? ARGON2_DEFAULTS.timeCost
+  const parallelism = options.parallelism ?? ARGON2_DEFAULTS.parallelism
+  const outputLen = options.outputLen ?? ARGON2_DEFAULTS.outputLen
+
+  const salt = crypto.getRandomValues(new Uint8Array(16))
+  const hash = nobleArgon2id(utf8ToBytes(password), salt, {
+    m: memoryCost,
+    t: timeCost,
+    p: parallelism,
+    dkLen: outputLen,
+  })
+
+  return [
+    '$argon2id',
+    'v=19',
+    `m=${memoryCost},t=${timeCost},p=${parallelism}`,
+    toBase64(salt),
+    toBase64(hash),
+  ].join('$')
+}
+
+/**
+ * Verifikasi password terhadap hash argon2.
+ *
  * Selalu mengembalikan boolean — tidak pernah melempar exception, supaya
  * pemanggil tidak perlu membedakan "salah password" dari "hash rusak"
  * (keduanya harus memberi respons identik agar tidak membocorkan informasi).
  *
- * @param {string} hashed
- * @param {string} password
- * @returns {Promise<boolean>}
+ * Perbandingan dilakukan constant-time untuk mengurangi risiko timing attack.
  */
-export async function verifyPassword(hashed, password) {
+export async function verifyPassword(hashed: string, password: string): Promise<boolean> {
   if (typeof hashed !== 'string' || typeof password !== 'string') return false
+
+  const match = PHC_PATTERN.exec(hashed.trim())
+  if (!match) return false
+
+  const [, algorithm, version, m, t, p, saltB64, hashB64] = match
+  if (algorithm !== 'argon2id') return false
+  if (version !== '19') return false
+
   try {
-    const { verify } = await import('@node-rs/argon2')
-    return await verify(hashed, password)
+    const salt = fromBase64(saltB64)
+    const expected = fromBase64(hashB64)
+    const actual = nobleArgon2id(utf8ToBytes(password), salt, {
+      m: Number(m),
+      t: Number(t),
+      p: Number(p),
+      dkLen: expected.length,
+    })
+    return timingSafeEqualBytes(expected, actual)
   } catch {
     return false
   }
 }
 
-/**
- * True bila string terlihat seperti hash argon2 yang valid.
- * Dipakai untuk menolak input berbahaya sebelum diteruskan ke pustaka.
- * @param {string} value
- */
-export function isArgon2Hash(value) {
-  return typeof value === 'string' && /^\$argon2(id|i|d)\$v=\d+\$m=\d+,t=\d+,p=\d+\$[A-Za-z0-9+/]+\$[A-Za-z0-9+/]+$/.test(value)
+/** Bandingkan dua byte array dalam waktu konstan. */
+function timingSafeEqualBytes(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false
+  let diff = 0
+  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i]
+  return diff === 0
 }
+
+/** True bila string terlihat seperti hash argon2 yang valid. */
+export function isArgon2Hash(value: unknown): boolean {
+  return typeof value === 'string' && PHC_PATTERN.test(value.trim())
+}
+
+/** Helper diagnostik: bytesToHex tanpa membocorkan isi modul. */
+export { bytesToHex }

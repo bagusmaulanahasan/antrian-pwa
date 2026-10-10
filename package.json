@@ -13,19 +13,25 @@
     "smoke:mock:rls": "node scripts/smoke-with-mock.mjs --rls-error",
     "smoke:mock:notable": "node scripts/smoke-with-mock.mjs --missing-table",
     "smoke:mock:rpcopen": "node scripts/smoke-with-mock.mjs --rpc-open",
+    "test:worker": "node scripts/worker-test.mjs",
+    "worker:dev": "node node_modules/wrangler/bin/wrangler.js dev --config worker/wrangler.toml",
+    "worker:deploy": "node node_modules/wrangler/bin/wrangler.js deploy --config worker/wrangler.toml",
     "assets:generate": "node scripts/generate-assets.mjs",
     "assets:verify": "node scripts/verify-assets.mjs",
     "test:unit": "node --experimental-strip-types --test worker/test/*.test.ts",
     "hash-password": "node scripts/hash-password.mjs",
-    "verify": "npm run typecheck && npm run test:unit && npm run smoke:mock && npm run smoke:mock:rls && npm run smoke:mock:notable && npm run smoke:mock:rpcopen && npm run build && npm run assets:verify"
+    "verify": "npm run typecheck && npm run test:unit && npm run test:worker && npm run smoke:mock && npm run smoke:mock:rls && npm run smoke:mock:notable && npm run smoke:mock:rpcopen && npm run build && npm run assets:verify"
   },
   "dependencies": {
+    "@noble/hashes": "^2.4.0",
+    "@node-rs/argon2-wasm32-wasi": "^2.2.2",
     "@supabase/supabase-js": "^2.39.0",
     "lucide-vue-next": "^0.460.0",
     "vue": "^3.3.11",
     "vue-router": "^4.6.4"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261009.1",
     "@node-rs/argon2": "^2.2.2",
     "@types/node": "^20.10.0",
     "@vitejs/plugin-vue": "^4.5.2",
@@ -36,6 +42,7 @@
     "typescript": "~5.6.3",
     "vite": "^5.0.0",
     "vite-plugin-pwa": "^0.17.4",
-    "vue-tsc": "^2.2.12"
+    "vue-tsc": "^2.2.12",
+    "wrangler": "^4.149.0"
   }
 }
