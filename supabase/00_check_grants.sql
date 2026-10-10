@@ -6,48 +6,56 @@
 --  JALANKAN FILE INI DULUAN, SEBELUM 03_fix_privileges.sql
 --  ------------------------------------------------------------
 --  File ini hanya membaca. Tidak menambah, mengubah, atau menghapus
---  apa pun. Aman dijalankan kapan saja.
+--  apa pun. Aman dijalankan kapan saja, termasuk setelah patch.
 --
---  Gunanya: Anda bisa melihat kondisi grant SEBELUM patch dijalankan,
---  sehingga kalau nanti ada masalah, kita tahu penyebabnya tanpa
---  menebak.
---
---  Cara menjalankan:
 --  Supabase Dashboard -> SQL Editor -> New query ->
 --  tempel SELURUH isi file ini -> Run.
 --
 --  ------------------------------------------------------------
---  CARA MEMBACA HASIL
+--  TIGA TABEL, SUDAH DIURUTKAN DARI YANG PALING PENTING
 --  ------------------------------------------------------------
---  Tabel pertama harus mengembalikan TEPAT 5 BARIS:
 --
---    function                | anon | authenticated | service_role | mode
---    ------------------------+------+---------------+--------------+--------
---    create_queue_entry      | false| false         | true         | invoker
---    next_queue_number       | false| false         | true         | invoker
---    revoke_all_refresh_tokens | false| false        | true         | invoker
---    revoke_refresh_token    | false| false         | true         | invoker
---    store_refresh_token     | false| false         | true         | invoker
+--  TABEL 1 — INI YANG HARUS ANDA BACA.
+--    Lima function milik aplikasi. WAJIB dicek.
 --
---  Kalau kolom anon atau authenticated bernilai TRUE, memang ada
---  kebocoran — itu yang akan diperbaiki 03_fix_privileges.sql.
+--    Seharusnya TEPAT 5 BARIS, dan idealnya begini:
 --
---  Tabel kedua bisa diabaikan. Itu hanya memberi tahu berapa banyak
---  function extension (seperti citext) yang juga bisa dipanggil anon.
---  Itu NORMAL dan AMAN: Postgres memberi EXECUTE ke PUBLIC untuk
---  semua function secara default, dan function extension hanya
---  pembanding string yang tidak menyentuh data aplikasi.
+--      function                  | anon | authenticated | service_role | mode
+--      --------------------------+------+---------------+--------------+---------
+--      create_queue_entry        | false| false         | true         | invoker
+--      next_queue_number         | false| false         | true         | invoker
+--      revoke_all_refresh_tokens | false| false         | true         | invoker
+--      revoke_refresh_token      | false| false         | true         | invoker
+--      store_refresh_token       | false| false         | true         | invoker
+--
+--    - anon atau authenticated = TRUE  -> masih bocor, jalankan 03
+--    - mode = definer                  -> lapisan kedua belum aktif
+--    - baris kurang dari 5              -> function tidak ada, laporkan
+--
+--  TABEL 2 — function milik sendiri DI LUAR daftar aplikasi yang
+--    masih terbuka oleh anon. Inilah tabel yang memperlihatkan
+--    kebocoran sekaligus function internal Supabase seperti
+--    rls_auto_enable (aman, tugasnya hanya menyalakan RLS).
+--
+--    Setelah 03 berhasil, tabel ini SEHARUSNYA hanya berisi
+--    rls_auto_enable — 5 function aplikasi harus hilang.
+--
+--  TABEL 3 — jumlah function extension yang juga bisa dipanggil anon.
+--    Abaikan. Angkanya pasti bukan nol dan itu normal: Postgres
+--    memberi EXECUTE ke PUBLIC untuk semua function, dan function
+--    extension (citext dll.) hanya pembanding string.
 --
 --  ------------------------------------------------------------
---  JANGAN JALANKAN 03_fix_privileges.sql JIKA TABEL PERTAMA
---  MENGEMBALIKAN LEBIH DARI 5 BARIS ATAU LEBIH SEDIKIT.
---  Berarti ada function aplikasi yang belum terdaftar di daftar ini.
---  Salin hasilnya dan laporkan sebelum melanjutkan.
+--  RINGKASAN TINDAKAN
+--  ------------------------------------------------------------
+--    Tabel 1 bersih           -> tidak perlu jalankan 03
+--    Tabel 1 ada TRUE         -> jalankan 03_fix_privileges.sql
+--    Tabel 1 bukan 5 baris    -> BERHENTI, laporkan hasilnya
 -- ============================================================
 
 
 -- ------------------------------------------------------------
---  TABEL 1 — lima function milik aplikasi
+--  TABEL 1 — LIMA FUNCTION MILIK APLIKASI  (BACA INI DULUAN)
 -- ------------------------------------------------------------
 select
   p.proname                                                  as function,
@@ -67,34 +75,22 @@ order by p.proname;
 
 
 -- ------------------------------------------------------------
---  TABEL 2 — function extension yang juga bisa dipanggil anon
---  Informasi saja. Wajar kalau angkanya bukan nol.
--- ------------------------------------------------------------
-select count(*) as "jumlah function extension (aman, abaikan)"
-from pg_proc p
-join pg_namespace n on n.oid = p.pronamespace
-where n.nspname = 'public'
-  and p.prokind = 'f'
-  and exists (
-    select 1
-    from pg_depend d
-    where d.classid    = 'pg_proc'::regclass
-      and d.objid      = p.oid
-      and d.refclassid = 'pg_extension'::regclass
-  )
-  and has_function_privilege('anon', p.oid, 'execute');
-
-
--- ------------------------------------------------------------
---  TABEL 3 — function milik sendiri (bukan extension) yang terbuka
+--  TABEL 2 — FUNCTION MILIK SENDIRI DI LUAR DAFTAR YANG TERBUKA
 --
---  Seharusnya kosong. Kalau berisi nama yang bukan Anda kenal,
---  salin dan laporkan sebelum menjalankan patch.
+--  Sebelum patch: berisi 5 function aplikasi + rls_auto_enable.
+--  Setelah patch : hanya rls_auto_enable. Itu yang diharapkan.
+--
+--  Fungsi internal Supabase seperti rls_auto_enable sengaja TIDAK
+--  dicabut — tugasnya hanya menyalakan RLS, dan mencabutnya bisa
+--  mengganggu Supabase Dashboard.
 -- ------------------------------------------------------------
 select
   p.proname                                                  as function,
   has_function_privilege('anon',          p.oid, 'execute') as anon,
-  has_function_privilege('authenticated', p.oid, 'execute') as authenticated
+  has_function_privilege('authenticated', p.oid, 'execute') as authenticated,
+  case when p.proname = 'rls_auto_enable'
+       then 'internal Supabase (aman)'
+       else 'periksa' end                                   as catatan
 from pg_proc p
 join pg_namespace n on n.oid = p.pronamespace
 where n.nspname = 'public'
@@ -109,3 +105,21 @@ where n.nspname = 'public'
   and (has_function_privilege('anon',          p.oid, 'execute')
     or has_function_privilege('authenticated', p.oid, 'execute'))
 order by p.proname;
+
+
+-- ------------------------------------------------------------
+--  TABEL 3 — JUMLAH FUNCTION EXTENSION YANG TERBUKA  (abaikan)
+-- ------------------------------------------------------------
+select count(*) as "jumlah function extension (aman, abaikan)"
+from pg_proc p
+join pg_namespace n on n.oid = p.pronamespace
+where n.nspname = 'public'
+  and p.prokind = 'f'
+  and exists (
+    select 1
+    from pg_depend d
+    where d.classid    = 'pg_proc'::regclass
+      and d.objid      = p.oid
+      and d.refclassid = 'pg_extension'::regclass
+  )
+  and has_function_privilege('anon', p.oid, 'execute');

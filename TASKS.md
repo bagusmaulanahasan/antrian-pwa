@@ -146,6 +146,58 @@ dan ditandai `print_status = 'failed'` dengan tombol Cetak Ulang / Lewati.
 
 - ✅ **T15** SQL perbaikan: seed, cabut grant anon, publication realtime, RPC token
       -> `supabase/02_seed_and_fixes.sql` (idempoten) - perlu dijalankan manual di SQL Editor
+- ✅ **T17** Penutup grant + hardening RPC
+      -> `supabase/03_fix_privileges.sql` (idempoten) + `supabase/00_check_grants.sql` (read-only)
+      -> unit 68/68, typecheck bersih, keempat file SQL lolos parser PostgreSQL
+
+---
+
+## Catatan insiden keamanan
+
+### 2026-10-10 - Kebocoran grant EXECUTE ke peran `anon`
+
+**Ditemukan oleh:** query verifikasi di akhir `02_seed_and_fixes.sql`, lalu
+dikonfirmasi lewat `POST /rpc/next_queue_number` yang membalas 200 untuk anon.
+
+**Akar masalah:** file 02 menulis `revoke execute ... from public`. Supabase
+memasang default privileges saat project dibuat:
+
+```sql
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT EXECUTE ON FUNCTIONS TO anon, authenticated, service_role;
+```
+
+Grant itu **langsung** ke peran, bukan lewat `PUBLIC`, jadi `revoke from public`
+tidak pernah menyentuhnya. Kelima function tetap terbuka:
+
+| Fungsi | Dampak |
+|---|---|
+| `store_refresh_token` | **Kritis.** Siapa pun bisa membuat refresh token untuk `user_id` mana pun, lalu menukarnya lewat `/api/auth/refresh` untuk mendapat akses sebagai akun tersebut. |
+| `revoke_all_refresh_tokens` | Keluarkan semua user sekaligus. |
+| `create_queue_entry` | Sisipkan antrian tanpa lewat Worker. |
+| `next_queue_number` | Bocor info penomoran. |
+| `revoke_refresh_token` | Butuh `token_hash` SHA-256, sulit dieksploitasi. |
+
+**Perbaikan:** revoke dari `public, anon, authenticated` sekaligus; hanya
+`service_role` yang boleh memanggil; `SECURITY DEFINER` -> `SECURITY INVOKER`
+sebagai lapisan kedua; `alter default privileges` dicabut agar tidak terulang.
+
+Peran `authenticated` sengaja tidak diberi akses karena aplikasi ini memakai
+custom auth - session dipegang Worker sebagai cookie, bukan Supabase Auth JWT.
+Tidak ada request dari aplikasi ini yang memakai peran tersebut.
+
+**Kesalahan saya yang narrated beberapa kali di tengah:**
+
+1. `SECURITY DEFINER` dipilih karena "RLS dilewati service_role" - saya salah
+   baca arahnya. Justru `_definer` **melewati RLS untuk siapa pun** yang bisa
+   memanggil, termasuk anon.
+2. Verifikasi grant memindai **seluruh** function di schema `public`, sehingga
+   ikut menghitung `citext` dan friends milik extension Supabase. Patch pun
+   gagal dan rollback total - perlu diperbaiki dua kali.
+
+**Pencegahan:** regression test `worker/test/sql-security.test.ts` (12 test),
+divalidasi lewat mutasi terbalik - reinstate `SECURITY DEFINER`, grant ke
+`authenticated`, dan revoke hanya dari `public` masing-masing membuat test gagal.
 
 ---
 

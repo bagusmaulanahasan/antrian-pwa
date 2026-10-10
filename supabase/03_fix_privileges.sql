@@ -246,6 +246,11 @@ declare
 
   v_leak    text;
   v_lainnya text;
+
+  -- Fungsi internal Supabase. Tugasnya hanya menyalakan RLS, tidak
+  -- menyentuh data. Dicabut dari anon bisa mengganggu Dashboard,
+  -- jadi sengaja dibiarkan.
+  v_known_safe text[] := array['rls_auto_enable'];
 begin
   -- (1) Function milik aplikasi: WAJIB tertutup.
   select string_agg(format('%s(%s)', p.proname, pg_get_function_identity_arguments(p.oid)), ', ')
@@ -278,6 +283,7 @@ begin
         and d.objid      = p.oid
         and d.refclassid = 'pg_extension'::regclass
     )
+    and p.proname <> all (v_known_safe)
     and (has_function_privilege('anon',          p.oid, 'execute')
       or has_function_privilege('authenticated', p.oid, 'execute'));
 

@@ -261,6 +261,19 @@ describe('Invariant keamanan SQL', () => {
         /raise\s+warning/i,
         `${rel}: function di luar daftar harus jadi peringatan, bukan error`,
       )
+
+      // Fungsi internal Supabase boleh tetap terbuka; kalau tidak,
+      // patch akan terus memunculkan peringatan yang tidak berguna.
+      assert.match(
+        sql,
+        /v_known_safe\s+text\[\]\s*:=\s*array\[([^\]]*)\]/i,
+        `${rel}: harus ada allowlist fungsi internal Supabase`,
+      )
+      assert.match(
+        sql,
+        /p\.proname\s*<>\s*all\s*\(\s*v_known_safe\s*\)/i,
+        `${rel}: allowlist harus dipakai saat memfilter peringatan`,
+      )
     })
   }
 

@@ -51,27 +51,53 @@ walaupun cetak gagal (lihat [Alur pendaftaran](#membuat-akun)).
 
 ## Menyiapkan Supabase
 
-### 1. Jalankan skema
+### 1. Diagnostik dulu (opsional tapi disarankan)
+
+Jalankan `supabase/00_check_grants.sql` lebih dulu. File ini **read-only** — hanya
+membaca, tidak mengubah apa pun. Gunanya supaya Anda tahu kondisi grant sebelum
+perbaikan, dan tidak perlu menebak kalau nanti ada masalah.
+
+Di **SQL Editor** it'll mengembalikan tiga tabel. Yang perlu Anda baca adalah
+**Tabel 1**: harus tepat 5 baris, dengan `anon` dan `authenticated` bernilai
+`false`.
+
+### 2. Jalankan skema
 
 Di Supabase Dashboard > **SQL Editor**, jalankan berurutan:
 
 1. `schema.sql` - tabel, fungsi, dan policy awal
 2. `supabase/02_seed_and_fixes.sql` - seed dan perbaikan (idempoten)
+3. `supabase/03_fix_privileges.sql` - penutup grant (idempoten)
 
-File kedua wajib dijalankan. `schema.sql` saja meninggalkan beberapa masalah
-yang tidak terlihat sampai aplikasi benar-benar dipakai:
+File kedua dan ketiga wajib dijalankan. `schema.sql` saja meninggalkan beberapa
+masalah yang tidak terlihat sampai aplikasi benar-benar dipakai:
 
 | Yang diperbaiki | Akibatnya kalau dilewati |
 |---|---|
-| `revoke execute ... from public` | `next_queue_number` bisa dipanggil role anon |
+| `revoke execute ... from public, anon, authenticated` | Kelima function RPC bisa dipanggil tanpa login |
+| `security definer` diganti `security invoker` | Fungsi refresh token melewati RLS |
+| `alter default privileges` dicabut | Function berikutnya bocor dengan cara yang sama |
 | Policy RLS untuk `settings` | Dashboard TV tidak bisa membaca template suara |
 | `queue_entries` masuk publication realtime | Dashboard TV tidak pernah sinkron |
 | Seed `settings` dan `categories` | Pengaturan kosong, template tidak ada |
 
-Verifikasi berhasil bila tiga query di akhir file tersebut mengembalikan:
-`false`, `1`, dan 4 baris.
+**Kenapa `revoke from public` saja tidak cukup.** Supabase memasang default
+privileges saat project dibuat, yang memberi EXECUTE **langsung** ke peran
+`anon` dan `authenticated` — bukan lewat `PUBLIC`. Karena itu pencabutan harus
+menyebut ketiga peran secara eksplisit.
 
-### 2. Catat kredensial
+Verifikasi berhasil bila:
+- Pesan `VERIFIKASI LULUS` (file 02) atau `PERBAIKAN BERHASIL` (file 03) muncul
+- Tabel ringkasan mengembalikan 5 baris, semua `anon = false`, `mode = invoker`
+- Tabel 2 pada `00_check_grants.sql` hanya menyisakan `rls_auto_enable`
+
+> Function seperti `citext` dari extension Supabase memang **selalu** bisa
+> dipanggil anon. Itu normal — Postgres memberi EXECUTE ke `PUBLIC` untuk semua
+> function secara default, dan fungsi extension hanya pembanding string yang
+> tidak menyentuh data aplikasi. Itu sebabnya verifikasi hanya memeriksa lima
+> function milik aplikasi.
+
+### 3. Catat kredensial
 
 Dashboard > **Project Settings > API**:
 
@@ -299,6 +325,25 @@ di-inline saat build: isi ulang lalu **build ulang**.
 - `JWT_ACCESS_SECRET` belum di-set, atau berubah setelah token diterbitkan.
 - `SUPABASE_URL` atau `SUPABASE_SERVICE_ROLE_KEY` di Worker salah sehingga akun
   tidak ditemukan.
+
+### `03_fix_privileges.sql` gagal dengan daftar fungsi aneh
+
+Pesan `GAGAL — masih bisa dipanggil tanpa login:` yang menyodorkan puluhan nama
+seperti `citext_eq` atau `regexp_match` **bukan** kebocoran Anda. Itu fungsi
+extension Supabase yang memang selalu bisa dipanggil anon, dan verifikasi versi
+lama ikut menghitungnya sehingga patch tidak pernah bisa lulus.
+
+Perbaikannya sudah masuk di repo (`d18ac05`): verifikasi kini dibatasi ke lima
+function milik aplikasi. Kalau Anda masih melihat pesan itu, kemungkinan besar
+Anda menjalankan versi file yang lama — unduh ulang dari GitHub.
+
+Kalau `raise exception` muncul, **seluruh transaksi dibatalkan**: tidak ada
+perubahan yang hanya diterapkan sebagian. Aman dijalankan berulang kali.
+
+### Fungsi `rls_auto_enable` masih terlihat terbuka
+
+Itu fungsi internal Supabase, bukan kebocoran. Tugasnya hanya menyalakan RLS
+dan sengaja tidak dicabut, karena mencabutnya bisa mengganggu Dashboard.
 
 ### Printer tidak ditemukan
 
