@@ -53,7 +53,36 @@ Status: ⬜ belum · 🟨 dikerjakan · ✅ selesai (lolos verifikasi) · ⚠️
 - ✅ **T16** Kategori, template suara & cetak, jam reset, kelola akun admin
       -> Worker `/api/admin/*` + `/api/settings`, 44 E2E
 
-- ⬜ **T14** `wrangler deploy` ke workers.dev + dokumentasi (README)
+- ⚠️ **T14** Deploy Worker + frontend
+      → Kode siap deploy (`wrangler deploy --dry-run` lulus, 176 KiB gzip).
+        **Terblokir** pada satu hal: `SUPABASE_SERVICE_ROLE_KEY` belum ada di
+        mesin ini, dan kunci itu hanya bisa dilihat lewat Dashboard Supabase.
+        Lihat langkah di bawah.
+
+### Langkah T14 (perlu 1 kredensial dari Anda)
+
+Ambil **service_role key** dari Supabase Dashboard > Project Settings > API.
+
+```bash
+cd worker
+npx wrangler secret put SUPABASE_URL            # https://rdgrjaaambhdihyfbnru.supabase.co
+npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY
+npx wrangler secret put JWT_ACCESS_SECRET        # openssl rand -base64 48
+```
+
+Isi `ALLOWED_ORIGIN` di `worker/wrangler.toml` sesuai domain frontend, lalu:
+
+```bash
+npx wrangler deploy          # -> https://antrian-api.<subdomain>.workers.dev
+curl <domain-itu>/api/health # harus {"status":"ok","database":"connected"}
+```
+
+Lalu di root project: isi `VITE_API_BASE_URL` dan `VITE_TV_PIN` di `.env`,
+build ulang, dan unggah `dist/`.
+
+> Deploy sengaja **tidak** saya eksekusi tanpa secret: Worker tanpa
+> `SUPABASE_SERVICE_ROLE_KEY` akan menolak semua permintaan dengan 503, dan
+> URL-nya publik. Lebih baik daripada meninggalkan endpoint yang rusak.
 
 ## Catatan T13 - Dashboard TV
 
