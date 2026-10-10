@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Konfigurasi khusus Dashboard TV.
  *
  * `VITE_TV_PIN` di-inline ke bundle saat build - ini disengaja. PIN TV bukan

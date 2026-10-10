@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Pengumuman suara untuk Dashboard TV (Web Speech API).
  *
  * Batasan penting browser yang harus ditangani:

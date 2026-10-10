@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Test integrasi Worker memakai workerd (runtime Cloudflare asli).
  *
  * Worker dijalankan lewat `wrangler dev` lalu crock dikontrol:

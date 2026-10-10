@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Smoke test end-to-end untuk halaman /dev/test-connection.
  *
  * Menjalankan Chrome headless terhadap dev server / preview server untuk

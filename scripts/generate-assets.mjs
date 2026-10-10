@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Generator aset PWA.
  *
  * Membuat ikon PNG tanpa dependensi gambar eksternal: SVG dirender menjadi

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Mock Supabase REST/Auth untuk menguji jalur kode diagnostik tanpa project nyata.
  *
  * Menghormati toggle lewat query/header:

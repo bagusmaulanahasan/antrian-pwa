@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Worker API untuk Sistem Antrian.
  *
  * Tanggung jawab:

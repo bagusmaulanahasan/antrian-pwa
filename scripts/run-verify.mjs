@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Menjalankan seluruh suite verifikasi satu per satu, dengan jeda di antaranya.
  *
  * `npm run verify` merantai semuanya dalam satu proses shell. Itu cepat,

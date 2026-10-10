@@ -1,4 +1,4 @@
-﻿/**
+/**
  * E2E dashboard admin: mendaftarkan pelanggan, navigasi antrian, dan
  * perilaku cetak gagal.
  *

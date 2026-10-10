@@ -1,4 +1,4 @@
-﻿/**
+/**
  * E2E Pengaturan Owner: kategori, template suara/cetak, jam reset, kelola akun.
  *
  * Menguji juga PENOLAKAN hak akses â€” admin tidak boleh menyentuh endpoint

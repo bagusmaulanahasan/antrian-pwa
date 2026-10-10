@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Mock Cloudflare Worker untuk E2E test frontend.
  *
  * Berbeda dengan mock-supabase.mjs, ini mengembalikan HTML/JS untuk halaman

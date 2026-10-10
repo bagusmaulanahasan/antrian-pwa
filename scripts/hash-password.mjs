@@ -1,4 +1,4 @@
-﻿/**
+/**
  * CLI untuk membangkitkan hash argon2id dan statement SQL pembuatan akun.
  *
  * Dipakai owner/admin untuk membuat akun tanpa Login Dashboard Supabase.

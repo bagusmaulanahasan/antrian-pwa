@@ -1,4 +1,4 @@
-﻿/**
+/**
  * E2E Dashboard TV.
  *
  * TV tidak punya akun â€” ia membaca langsung dari Supabase memakai anon key.

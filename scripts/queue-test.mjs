@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Integration test API antrian (Worker + mock PostgREST).
  *
  * Menguji aturan bisnis dari PRD:

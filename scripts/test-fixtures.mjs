@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Fixture bersama untuk test.
  *
  * Password & hash argon2id. Hash bersifat unik per salt, jadi fixture HARUS

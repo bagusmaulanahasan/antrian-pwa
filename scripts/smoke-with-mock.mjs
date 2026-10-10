@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Menjalankan smoke test terhadap Supabase mock, lewat jalur PRODUCTION.
  *
  * Strategi: `vite build` (env di-inline saat build) lalu `vite preview`.

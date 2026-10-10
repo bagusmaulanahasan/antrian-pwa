@@ -1,4 +1,4 @@
-﻿/**
+/**
  * API pengaturan & kategori (Worker) â€” khusus Owner.
  *
  * Semua rute di sini menolak role `admin`; hanya `owner` yang boleh mengubah

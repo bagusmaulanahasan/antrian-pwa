@@ -1,4 +1,4 @@
-﻿# Sistem Antrian PWA
+# Sistem Antrian PWA
 
 Aplikasi manajemen antrian berbasis PWA: pendaftaran pelanggan dengan cetak
 tiket Bluetooth ESC/POS 58mm, dashboard admin real-time, dan dashboard TV
