@@ -1,5 +1,5 @@
--- ============================================================
---  Sistem Antrian — Supabase Postgres Schema
+﻿-- ============================================================
+--  Sistem Antrian â€” Supabase Postgres Schema
 --  Jalankan di SQL Editor Supabase
 -- ============================================================
 
@@ -12,7 +12,7 @@ create type queue_status    as enum ('waiting', 'serving', 'pending', 'done', 'c
 create type print_status    as enum ('printed', 'pending', 'failed');
 
 -- ============================================================
---  Users (custom auth — password hash argon2id)
+--  Users (custom auth â€” password hash argon2id)
 -- ============================================================
 create table users (
   id                    uuid primary key default gen_random_uuid(),
@@ -41,6 +41,14 @@ create table refresh_tokens (
 );
 
 create index idx_refresh_tokens_user on refresh_tokens(user_id) where revoked_at is null;
+
+-- Refresh token dibaca lewat `update ... where token_hash = X` lalu
+-- `update ... where id = Y`. Tanpa index pada token_hash, setiap permintaan
+-- /api/auth/refresh akan melakukan seq scan â€” dan(seq scan) pada tabel token
+-- adalah denyasa yang mudah disalahartikan sebagai "token tidak ada".
+create index idx_refresh_tokens_hash on refresh_tokens(token_hash);
+create unique index idx_refresh_tokens_hash_unique on refresh_tokens(token_hash)
+  where revoked_at is null;
 
 -- ============================================================
 --  Settings (key-value dengan updated_at untuk sync cache)

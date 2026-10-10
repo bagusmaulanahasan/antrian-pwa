@@ -14,6 +14,7 @@
     "smoke:mock:notable": "node scripts/smoke-with-mock.mjs --missing-table",
     "smoke:mock:rpcopen": "node scripts/smoke-with-mock.mjs --rpc-open",
     "test:worker": "node scripts/worker-test.mjs",
+    "test:queue": "node scripts/queue-test.mjs",
     "test:e2e:auth": "node scripts/auth-e2e.mjs",
     "worker:dev": "node node_modules/wrangler/bin/wrangler.js dev --config worker/wrangler.toml",
     "worker:deploy": "node node_modules/wrangler/bin/wrangler.js deploy --config worker/wrangler.toml",
@@ -21,7 +22,7 @@
     "assets:verify": "node scripts/verify-assets.mjs",
     "test:unit": "node --experimental-strip-types --test worker/test/*.test.ts",
     "hash-password": "node scripts/hash-password.mjs",
-    "verify": "npm run typecheck && npm run test:unit && npm run test:worker && npm run test:e2e:auth && npm run smoke:mock && npm run smoke:mock:rls && npm run smoke:mock:notable && npm run smoke:mock:rpcopen && npm run build && npm run assets:verify"
+    "verify": "npm run typecheck && npm run test:unit && npm run test:worker && npm run test:queue && npm run test:e2e:auth && npm run smoke:mock && npm run smoke:mock:rls && npm run smoke:mock:notable && npm run smoke:mock:rpcopen && npm run build && npm run assets:verify"
   },
   "dependencies": {
     "@noble/hashes": "^2.4.0",

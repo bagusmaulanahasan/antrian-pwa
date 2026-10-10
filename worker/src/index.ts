@@ -23,6 +23,16 @@ import {
   type Env,
 } from './lib/http'
 import { createUncachedClient } from './lib/supabaseAdmin'
+import {
+  callNext,
+  createQueueEntry,
+  listCategories,
+  listQueue,
+  markPrinted,
+  recall,
+  setStatus,
+  type QueueEntry,
+} from './lib/queue'
 import { verifyPassword, hashPassword } from './lib/password'
 import {
   ACCESS_TOKEN_TTL_SECONDS,
@@ -73,14 +83,22 @@ async function issueSession(
   const accessToken = await signAccessToken(userPayload(user), env.JWT_ACCESS_SECRET)
   const refreshToken = generateRefreshToken()
   const tokenHash = await hashRefreshToken(refreshToken)
+  const expiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_SECONDS * 1000).toISOString()
+  const userAgent = request.headers.get('User-Agent')?.slice(0, 500) ?? null
 
   const supabase = await createUncachedClient(env)
-  const expiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_SECONDS * 1000).toISOString()
-  const { error } = await supabase.from('refresh_tokens').insert({
-    user_id: user.id,
-    token_hash: tokenHash,
-    expires_at: expiresAt,
-    user_agent: request.headers.get('User-Agent')?.slice(0, 500) ?? null,
+
+  // Tabel `refresh_tokens` sengaja TIDAK diberi policy RLS (lihat
+  // supabase/02_seed_and_fixes.sql) supaya tidak bisa dibaca/diubah dari sisi
+  // klien. Karena service_role juga ikut melewati RLS, menulis lewat PostgREST
+  // tetap bisa — tapi INSERT langsung ditolak karena tabel tidak punya policy
+  // INSERT untuk role yang diizuinkan. Yang dipakai adalah RPC
+  // SECURITY DEFINER agar satu-satunya jalur tulis terpusat dan tervalidasi.
+  const { error } = await supabase.rpc('store_refresh_token', {
+    p_user_id: user.id,
+    p_token_hash: tokenHash,
+    p_expires_at: expiresAt,
+    p_user_agent: userAgent,
   })
   if (error) {
     console.error('[worker] gagal menyimpan refresh token:', error.message)
@@ -257,19 +275,21 @@ const handler = async (request: Request, env: Env): Promise<Response> => {
     const user = userData as UserRow | null
     if (!user || !user.is_active) return failWith('Akun tidak aktif.', 401)
 
-    // Rotasi refresh token: token lama langsung dicabut.
+    // Rotasi refresh token: token lama langsung dicabut, lalu token baru
+    // diterbitkan. Semua lewat RPC supaya validasi tetap di satu tempat.
     const newToken = generateRefreshToken()
     const newHash = await hashRefreshToken(newToken)
-    await supabase
-      .from('refresh_tokens')
-      .update({ revoked_at: new Date().toISOString() })
-      .eq('id', record.id)
-    await supabase.from('refresh_tokens').insert({
-      user_id: user.id,
-      token_hash: newHash,
-      expires_at: new Date(Date.now() + REFRESH_TOKEN_TTL_SECONDS * 1000).toISOString(),
-      user_agent: request.headers.get('User-Agent')?.slice(0, 500) ?? null,
+    await supabase.rpc('revoke_refresh_token', { p_token_hash: tokenHash })
+    const { error: storeError } = await supabase.rpc('store_refresh_token', {
+      p_user_id: user.id,
+      p_token_hash: newHash,
+      p_expires_at: new Date(Date.now() + REFRESH_TOKEN_TTL_SECONDS * 1000).toISOString(),
+      p_user_agent: request.headers.get('User-Agent')?.slice(0, 500) ?? null,
     })
+    if (storeError) {
+      console.error('[worker] gagal menyimpan refresh token baru:', storeError.message)
+      return failWith('Gagal memperbarui sesi. Coba lagi.', 500)
+    }
 
     const accessToken = await signAccessToken(userPayload(user), env.JWT_ACCESS_SECRET)
     return respond(
@@ -304,10 +324,7 @@ const handler = async (request: Request, env: Env): Promise<Response> => {
     if (raw) {
       const supabase = await createUncachedClient(env)
       const tokenHash = await hashRefreshToken(decodeURIComponent(raw))
-      await supabase
-        .from('refresh_tokens')
-        .update({ revoked_at: new Date().toISOString() })
-        .eq('token_hash', tokenHash)
+      await supabase.rpc('revoke_refresh_token', { p_token_hash: tokenHash })
     }
 
     return respond({ ok: true }, 200, {}, [
@@ -370,15 +387,138 @@ const handler = async (request: Request, env: Env): Promise<Response> => {
       .eq('id', user.id)
     if (error) return failWith('Gagal menyimpan password baru.', 500)
 
-    // Cabut semua sesi lama â€” password berubah, semua perangkat harus masuk lagi.
-    await supabase
-      .from('refresh_tokens')
-      .update({ revoked_at: new Date().toISOString() })
-      .eq('user_id', user.id)
-      .is('revoked_at', null)
+    // Cabut semua sesi lama — password berubah, semua perangkat harus masuk lagi.
+    await supabase.rpc('revoke_all_refresh_tokens', { p_user_id: user.id })
 
     const updated: UserRow = { ...user, password_hash: newHash, is_password_temporary: false }
     return issueSession(request, updated, env)
+  }
+
+  // ================= OPERASIONAL ANTRIAN =================
+  //
+  // Semua rute di bawah wajib terautentikasi. Dashboard TV hanya membaca
+  // lewat anon key langsung ke Supabase, tidak lewat Worker ini.
+  if (url.pathname.startsWith('/api/queue')) {
+    if (!bearer) return failWith('Tidak terautentikasi.', 401)
+    if (!payload) return failWith('Token tidak valid atau kedaluwarsa.', 401)
+
+    const userId = payload.sub
+
+    // GET /api/queue            → daftar antrian + jumlah per status
+    // GET /api/queue/categories → kategori aktif
+    if (url.pathname === '/api/queue' && request.method === 'GET') {
+      try {
+        const date = url.searchParams.get('date') ?? undefined
+        return respond(await listQueue(env, date))
+      } catch (err) {
+        return failWith(err instanceof Error ? err.message : 'Gagal membaca antrian.', 500)
+      }
+    }
+
+    if (url.pathname === '/api/queue/categories' && request.method === 'GET') {
+      try {
+        return respond({ categories: await listCategories(env) })
+      } catch (err) {
+        return failWith(err instanceof Error ? err.message : 'Gagal membaca kategori.', 500)
+      }
+    }
+
+    // POST /api/queue           → tambah antrian
+    if (url.pathname === '/api/queue' && request.method === 'POST') {
+      const body = await readJson<{
+        customerName?: unknown
+        categoryId?: unknown
+        printStatus?: unknown
+      }>(request)
+      if (!body) return failWith('Body JSON tidak valid.', 400)
+
+      const customerName = typeof body.customerName === 'string' ? body.customerName.trim() : ''
+      if (!customerName) return failWith('Nama pelanggan wajib diisi.', 400)
+      if (customerName.length > 120) {
+        return failWith('Nama pelanggan terlalu panjang (maks 120 karakter).', 400)
+      }
+
+      const categoryId =
+        typeof body.categoryId === 'string' && body.categoryId ? body.categoryId : null
+      const printStatus = body.printStatus === 'printed' ? 'printed' : 'pending'
+
+      try {
+        const entry = await createQueueEntry(env, { customerName, categoryId, printStatus })
+        return respond({ entry }, 201)
+      } catch (err) {
+        return failWith(err instanceof Error ? err.message : 'Gagal membuat antrian.', 500)
+      }
+    }
+
+    // POST /api/queue/next      → panggil nomor berikutnya
+    if (url.pathname === '/api/queue/next' && request.method === 'POST') {
+      try {
+        const result = await callNext(env, userId)
+        if (!result.ok) return failWith(result.error ?? 'Gagal memanggil nomor berikutnya.', 500)
+        return respond(result)
+      } catch (err) {
+        return failWith(
+          err instanceof Error ? err.message : 'Gagal memanggil nomor berikutnya.',
+          500,
+        )
+      }
+    }
+
+    // PATCH /api/queue/:id      → ubah status
+    const statusMatch = /^\/api\/queue\/([0-9a-f-]{36})$/i.exec(url.pathname)
+    if (statusMatch && request.method === 'PATCH') {
+      const body = await readJson<{ status?: unknown }>(request)
+      const status = body?.status
+      const allowed = ['waiting', 'serving', 'pending', 'done', 'cancelled']
+      if (typeof status !== 'string' || !allowed.includes(status)) {
+        return failWith(
+          `Status tidak dikenal: ${String(status)}. Gunakan: ${allowed.join(', ')}.`,
+          400,
+        )
+      }
+      try {
+        const result = await setStatus(
+          env,
+          statusMatch[1],
+          status as QueueEntry['status'],
+          userId,
+        )
+        if (!result.ok) return failWith(result.error ?? 'Gagal mengubah status.', 500)
+        return respond(result)
+      } catch (err) {
+        return failWith(err instanceof Error ? err.message : 'Gagal mengubah status.', 500)
+      }
+    }
+
+    // POST /api/queue/:id/recall → panggil ulang
+    const recallMatch = /^\/api\/queue\/([0-9a-f-]{36})\/recall$/i.exec(url.pathname)
+    if (recallMatch && request.method === 'POST') {
+      try {
+        const result = await recall(env, recallMatch[1])
+        if (!result.ok) return failWith(result.error ?? 'Gagal memanggil ulang.', 500)
+        return respond(result)
+      } catch (err) {
+        return failWith(err instanceof Error ? err.message : 'Gagal memanggil ulang.', 500)
+      }
+    }
+
+    // POST /api/queue/:id/print → tandai cetak berhasil/gagal
+    const printMatch = /^\/api\/queue\/([0-9a-f-]{36})\/print$/i.exec(url.pathname)
+    if (printMatch && request.method === 'POST') {
+      const body = await readJson<{ printed?: unknown }>(request)
+      if (typeof body?.printed !== 'boolean') {
+        return failWith('Field "printed" harus boolean.', 400)
+      }
+      try {
+        const entry = await markPrinted(env, printMatch[1], body.printed)
+        return respond({ entry })
+      } catch (err) {
+        return failWith(
+          err instanceof Error ? err.message : 'Gagal memperbarui status cetak.',
+          500,
+        )
+      }
+    }
   }
 
   return failWith('Endpoint tidak ditemukan.', 404)

@@ -35,7 +35,9 @@ Status: ⬜ belum · 🟨 dikerjakan · ✅ selesai (lolos verifikasi) · ⚠️
 
 ## Dashboard Admin
 
-- ⬜ **T10** Dashboard admin: card kategori + input nama pelanggan
+- ✅ **T10** Backend API antrian + dashboard admin
+      → Worker `/api/queue/*`, 58 integration test
+- ⬜ **T10b** UI: card kategori + input nama + daftar antrian
 - ⬜ **T11** Cetak tiket Bluetooth ESC/POS + fallback cetak ulang
 - ⬜ **T12** Navigasi antrian: next / pending / selesai / panggil ulang / batalkan
 
@@ -45,7 +47,8 @@ Status: ⬜ belum · 🟨 dikerjakan · ✅ selesai (lolos verifikasi) · ⚠️
 
 ## Database
 
-- ⬜ **T15** Siapkan SQL perbaikan (seed owner, cabut grant anon, publication realtime)
+- ✅ **T15** SQL perbaikan: seed, cabut grant anon, publication realtime, RPC token
+      → `supabase/02_seed_and_fixes.sql` (idempoten) — perlu dijalankan manual di SQL Editor
 
 ---
 
@@ -118,6 +121,29 @@ Browser tidak bisa membaca cookie HttpOnly, jadi frontend tidak mungkin
 mengirim header `Authorization`. Awalnya Worker hanya membaca header — akibatnya
 `/api/auth/me` dan `change-password` selalu 401 di browser meski cookie valid.
 Sekarang Worker membaca header lebih dulu, lalu cookie `antrian_access`.
+
+### Menulis refresh_tokens lewat RPC
+
+Tabel `refresh_tokens` sengaja TIDAK diberi policy RLS — token sesi tidak
+pernah boleh dibaca dari sisi klien. Akses tulis dipusatkan ke RPC
+`security definer` (`store_refresh_token`, `revoke_refresh_token`,
+`revoke_all_refresh_tokens`) dengan grant hanya untuk `service_role`.
+Keuntungannya: seluruh jalur tulis tervalidasi di satu tempat, dan
+`token_hash` yang bukan SHA-256 hex ditolak sebelum menyentuh tabel.
+
+### Mock harus meniru ketatnya PostgREST
+
+Tiga kegagalan test awal berasal dari mock yang terlalu longgar:
+
+| Kelalaian mock | Gejala di kode nyata |
+|---|---|
+| Selalu balas array | `.maybeSingle()` selalu `null` — status update terlihat kosong padahal DB berubah |
+| Terima kolom asing | Salah ketik nama kolom lolos diam-diam |
+| `select=*` diperlakukan sebagai nama kolom literal | `entry` berisi `{}` |
+
+Sekarang mock_PROJECT mengembalikan objek tunggal bila `Accept:
+application/vnd.pgrst.object` (dipakai `.maybeSingle()`), menolak kolom tak
+dikenal dengan PGRST204, dan memperlakukan `*` sebagai "semua kolom".
 
 ### Balapan initAuth
 

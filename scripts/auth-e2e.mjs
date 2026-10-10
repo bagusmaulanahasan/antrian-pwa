@@ -81,12 +81,57 @@ function json(res, status, body) {
 
 const http = await import('node:http')
 
-const mockPg = http.createServer(async (req, res) => {
+const // Mock PostgREST untuk auth-e2e. Sengaja sederhana: endpoint yang dipakai
+// Worker untuk alur auth saja. state di-share dengan mock-supabase.mjs lewat
+// nilai yang sama lewat resetState().
+mockPg = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://127.0.0.1:${MOCK_PG_PORT}`)
   const path = url.pathname
   if (path === '/control/reset') {
     resetState()
     return json(res, 200, { ok: true })
+  }
+  if (path.startsWith('/rest/v1/rpc/')) {
+    let raw = ''
+    for await (const chunk of req) raw += chunk
+    const args = raw ? JSON.parse(raw) : {}
+    const fn = path.slice('/rest/v1/rpc/'.length)
+    if (fn === 'store_refresh_token') {
+      if (typeof args.p_token_hash !== 'string' || args.p_token_hash.length !== 64) {
+        return json(res, 400, { code: '22023', message: 'token_hash harus 64 karakter' })
+      }
+      const row = {
+        id: `rt-${++state.seq}`,
+        user_id: args.p_user_id,
+        token_hash: args.p_token_hash,
+        expires_at: args.p_expires_at,
+        user_agent: args.p_user_agent ?? null,
+        revoked_at: null,
+      }
+      state.refreshTokens.push(row)
+      return json(res, 200, row.id)
+    }
+    if (fn === 'revoke_refresh_token') {
+      let n = 0
+      for (const t of state.refreshTokens) {
+        if (t.token_hash === args.p_token_hash && !t.revoked_at) {
+          t.revoked_at = new Date().toISOString()
+          n++
+        }
+      }
+      return json(res, 200, n > 0)
+    }
+    if (fn === 'revoke_all_refresh_tokens') {
+      let n = 0
+      for (const t of state.refreshTokens) {
+        if (t.user_id === args.p_user_id && !t.revoked_at) {
+          t.revoked_at = new Date().toISOString()
+          n++
+        }
+      }
+      return json(res, 200, n)
+    }
+    return json(res, 404, { code: '42883', message: `function ${fn} does not exist` })
   }
   if (!path.startsWith('/rest/v1/')) return json(res, 404, { message: 'mock-pg: 404' })
 
