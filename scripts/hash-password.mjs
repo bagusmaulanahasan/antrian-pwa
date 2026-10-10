@@ -5,15 +5,24 @@
  *
  * Contoh:
  *   node scripts/hash-password.mjs "#Pass123" owner@contoh.com owner
- *   node scripts/hash-password.mjs "#Pass123" admin@contoh.com admin --temp
+ *   node scripts/hash-password.mjs "#Pass123" admin@contoh.com admin temp
+ *
+ * Flag `temp` boleh ditulis sebagai argumen POSITIONAL (tanpa tanda --),
+ * bukan hanya sebagai `--temp`. Alasannya npm memakan flag berawalan
+ * `-` pada `npm run <script> --temp`, sehingga `--temp` diam-diam hilang
+ * dan akun terbentuk dengan password permanen tanpa peringatan.
+ * Argumen posisional tidak dimakan npm, jadi bentuk ini selalu aman:
+ *
+ *   npm run hash-password "pass" owner@contoh.com owner temp     <- aman
+ *   npm run hash-password -- "pass" owner@contoh.com owner --temp  <- perlu --
  *
  * Output:
  *   - hash PHC siap tempel ke kolom users.password_hash
- *   - statement INSERT/UDPATE siap jalankan di SQL Editor
+ *   - statement INSERT/UPDATE siap jalankan di SQL Editor
  */
 import { hashPassword, isArgon2Hash } from '../worker/src/lib/password.ts'
 
-const [password, email, role = 'admin', ...flags] = process.argv.slice(2)
+const [password, email, role = 'admin', ...rest] = process.argv.slice(2)
 
 function fail(message, code = 1) {
   console.error(`\nERROR: ${message}\n`)
@@ -35,8 +44,30 @@ if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
 }
 if (password.length < 8) fail('Password minimal 8 karakter.')
 
-const isTemporary = flags.includes('--temp')
-const displayName = flags.find((f) => f.startsWith('--name='))?.slice(7)
+/**
+ * `temp` dikenali baik sebagai argumen posisional maupun sebagai
+ * `--temp`. Positional adalah bentuk yang disarankan karena tidak
+ * bisa dimakan npm.
+ */
+const isTemporary =
+  rest.includes('temp') || rest.includes('temporary') || rest.includes('--temp')
+const displayName = rest.find((f) => f.startsWith('--name='))?.slice(7)
+
+if (normalizedRole === 'owner' && !isTemporary) {
+  console.warn('\n' + '='.repeat(60))
+  console.warn('PERINGATAN: akun owner dibuat TANPA flag temp.')
+  console.warn('')
+  console.warn('Password ini akan menjadi password PERMANEN. Ia tidak akan')
+  console.warn('pernah dipaksa diganti saat login.')
+  console.warn('')
+  console.warn('Untuk akun bootstrap, biasanya Anda ingin password sementara:')
+  console.warn('')
+  console.warn('  npm run hash-password "' + password + '" ' + email.toLowerCase() + ' owner temp')
+  console.warn('')
+  console.warn('(perhatikan argumen "temp" di akhir — bukan "--temp", yang')
+  console.warn('dimakan npm bila tanpa tanda "--" sebelumnya)')
+  console.warn('='.repeat(60) + '\n')
+}
 
 const hashed = await hashPassword(password)
 
@@ -47,11 +78,11 @@ console.log('\n=== Verifikasi ===')
 const { verifyPassword } = await import('../worker/src/lib/password.ts')
 const ok = await verifyPassword(hashed, password)
 const bad = await verifyPassword(hashed, 'password-yang-salah')
-console.log(`  password benar      â†’ ${ok ? 'LOLOS' : 'GAGAL'}`)
-console.log(`  password salah      â†’ ${bad ? 'LOLOS (BAHAYA!)' : 'ditolak (benar)'}`)
+console.log(`  password benar      → ${ok ? 'LOLOS' : 'GAGAL'}`)
+console.log(`  password salah      → ${bad ? 'LOLOS (BAHAYA!)' : 'ditolak (benar)'}`)
 
 if (!ok) {
-  console.error('\nVerifikasi gagal â€” jangan gunakan hash ini.')
+  console.error('\nVerifikasi gagal — jangan gunakan hash ini.')
   process.exit(1)
 }
 if (!isArgon2Hash(hashed)) {

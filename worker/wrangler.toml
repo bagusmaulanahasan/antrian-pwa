@@ -3,6 +3,9 @@ main = "src/index.ts"
 compatibility_date = "2024-11-11"
 compatibility_flags = ["nodejs_compat"]
 
+workers_dev = true
+preview_urls = false
+
 # Password di-hash dengan @noble/hashes (JS murni + WebCrypto).
 # Alasannya Workers tidak bisa memuat addon native .node, dan build WASM
 # @node-rs/argon2 gagal di runtime dengan:

@@ -53,11 +53,13 @@ Status: ⬜ belum · 🟨 dikerjakan · ✅ selesai (lolos verifikasi) · ⚠️
 - ✅ **T16** Kategori, template suara & cetak, jam reset, kelola akun admin
       -> Worker `/api/admin/*` + `/api/settings`, 44 E2E
 
-- ⚠️ **T14** Deploy Worker + frontend
-      → Kode siap deploy (`wrangler deploy --dry-run` lulus, 176 KiB gzip).
-        **Terblokir** pada satu hal: `SUPABASE_SERVICE_ROLE_KEY` belum ada di
-        mesin ini, dan kunci itu hanya bisa dilihat lewat Dashboard Supabase.
-        Lihat langkah di bawah.
+- ✅ **T14** Deploy Worker API ke Cloudflare Workers
+      Worker aktif di `https://antrian-api.bagusmaulana0320.workers.dev` (`/api/health` 200 OK, DB connected).
+      Secrets terpasang: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `JWT_ACCESS_SECRET`.
+
+- ⏳ **T18** Rate limiting & lockout protection untuk endpoint login
+      Endpoint `/api/auth/login` belum memiliki rate limit per-IP atau counter batas percobaan.
+      Ditunda agar tidak menghalangi login pertama; dicatat sebagai pekerjaan hardening berikutnya.
 
 ### Langkah T14 (perlu 1 kredensial dari Anda)
 

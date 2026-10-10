@@ -181,8 +181,12 @@ muncul saat `npm run dev`.
 Tidak ada akun bawaan yang aktif. Buat hash lalu jalankan SQL-nya:
 
 ```bash
-node scripts/hash-password.mjs "#Pass123" owner@example.com owner --temp
+npm run hash-password -- "PasswordAnda" owner@contoh.com owner temp
 ```
+
+> **Catatan soal `npm run` dan flag:**
+> `npm` secara otomatis memakan flag berawalan `-` (seperti `--temp`) jika ditulis langsung, sehingga flag tersebut hilang dan akun tercipta dengan password **permanen** tanpa peringatan.
+> Untuk mencegahnya, gunakan argumen **posisional** `temp` di akhir tanpa tanda `-`, atau gunakan pemisah `--` seperti di atas (`npm run hash-password -- ... --temp`). Script ini mendeteksi keduanya.
 
 Perintah itu mencetak hash argon2id **dan** statement `INSERT` siap tempel.
 Jalankan statement tersebut di Supabase SQL Editor.
@@ -194,6 +198,11 @@ Jalankan statement tersebut di Supabase SQL Editor.
 Untuk menambah admin, bisa juga lewat **Pengaturan Owner > Kelola Akun**.
 Password yang diberikan owner selalu berstatus *sementara*: admin wajib
 menggantinya saat login pertama.
+
+> **PENTING:** Selalu verifikasi akun owner baru memiliki `is_password_temporary = true` di database. Jika Anda membuat akun lewat CLI dan lupa menyertakan flag `temp`, jalankan SQL ini untuk memperbaikinya:
+> ```sql
+> update users set is_password_temporary = true where email = 'email-owner@anda.com';
+> ```
 
 ### Alur pendaftaran
 
@@ -305,8 +314,7 @@ memakai mock, jadi aman dijalankan tanpa menyentuh data produksi.
 Skrip lain:
 
 ```bash
-npm run hash-password "#Pass123" owner@example.com owner --temp
-npm run assets:generate        # buat ulang ikon PWA
+npm run hash-password -- "#Pass123" owner@contoh.com owner temp
 ```
 
 ---
