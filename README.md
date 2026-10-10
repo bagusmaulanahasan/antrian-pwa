@@ -4,11 +4,11 @@ Aplikasi manajemen antrian berbasis PWA: pendaftaran pelanggan dengan cetak
 tiket Bluetooth ESC/POS 58mm, dashboard admin real-time, dan dashboard TV
 dengan pengumuman suara.
 
-- **Frontend** â€" Vue 3 (`<script setup>` + TypeScript), Vite, Tailwind, PWA
-- **Backend** â€" Cloudflare Workers (autentikasi + API operasional)
-- **Database** â€" Supabase Postgres + Realtime + RLS
+- **Frontend** - Vue 3 (`<script setup>` + TypeScript), Vite, Tailwind, PWA
+- **Backend** - Cloudflare Workers (autentikasi + API operasional)
+- **Database** - Supabase Postgres + Realtime + RLS
 
-Spesifikasi lengkap ada di [PRD.md](./PRD.md), dan status pengerjaan ada di
+Spesifikasi lengkap ada di [PRD.md](./PRD.md), status pengerjaan ada di
 [TASKS.md](./TASKS.md).
 
 ---
@@ -31,10 +31,10 @@ Spesifikasi lengkap ada di [PRD.md](./PRD.md), dan status pengerjaan ada di
 
 | Kebutuhan | Versi | Catatan |
 |---|---|---|
-| Node.js | â‰¥ 20 | Diuji pada 26.x |
-| npm | â‰¥ 10 | |
-| Supabase project | â€" | Gratis.dev |
-| Akun Cloudflare | â€" | Gratis Workers |
+| Node.js | 20 atau lebih baru | Diuji pada 26.x |
+| npm | 10 atau lebih baru | |
+| Supabase project | - | Tier gratis cukup |
+| Akun Cloudflare | - | Tier gratis Workers cukup |
 
 Dua batasan browser yang perlu diketahui **sebelum** dipakai di lapangan:
 
@@ -42,10 +42,10 @@ Dua batasan browser yang perlu diketahui **sebelum** dipakai di lapangan:
   dan hanya dalam konteks *secure* (HTTPS atau localhost). Safari dan Firefox
   belum mendukungnya.
 - **Web Speech API** untuk pengumuman suara tidak tersedia di semua browser;
-  Chrome/Edge mendukungnya.
+  Chrome dan Edge mendukungnya.
 
-Aplikasi tetap berfungsi tanpa printer â€" nomor antrian **tidak pernah hilang**
-walaupun cetak gagal (lihat [Alur pendaftaran](#alur-pendaftaran)).
+Aplikasi tetap berfungsi tanpa printer: nomor antrian **tidak pernah hilang**
+walaupun cetak gagal (lihat [Alur pendaftaran](#membuat-akun)).
 
 ---
 
@@ -53,27 +53,27 @@ walaupun cetak gagal (lihat [Alur pendaftaran](#alur-pendaftaran)).
 
 ### 1. Jalankan skema
 
-Di Supabase Dashboard â†' **SQL Editor**, jalankan berurutan:
+Di Supabase Dashboard > **SQL Editor**, jalankan berurutan:
 
-1. `schema.sql` â€" tabel, fungsi, dan policy awal
-2. `supabase/02_seed_and_fixes.sql` â€" seed + perbaikan (idempoten)
+1. `schema.sql` - tabel, fungsi, dan policy awal
+2. `supabase/02_seed_and_fixes.sql` - seed dan perbaikan (idempoten)
 
-File kedua wajib dijalankan. `schema.sql` saja meninggalkan tiga masalah yang
-tidak terlihat sampai aplikasi dipakai:
+File kedua wajib dijalankan. `schema.sql` saja meninggalkan beberapa masalah
+yang tidak terlihat sampai aplikasi benar-benar dipakai:
 
 | Yang diperbaiki | Akibatnya kalau dilewati |
 |---|---|
-| `revoke execute â€¦ from public` | `next_queue_number` bisa dipanggil role anon |
+| `revoke execute ... from public` | `next_queue_number` bisa dipanggil role anon |
 | Policy RLS untuk `settings` | Dashboard TV tidak bisa membaca template suara |
 | `queue_entries` masuk publication realtime | Dashboard TV tidak pernah sinkron |
-| Seed `settings` & `categories` | Pengaturan kosong, template tidak ada |
+| Seed `settings` dan `categories` | Pengaturan kosong, template tidak ada |
 
-Verifikasi berhasil bila ketiga query di akhir file tersebut mengembalikan:
+Verifikasi berhasil bila tiga query di akhir file tersebut mengembalikan:
 `false`, `1`, dan 4 baris.
 
 ### 2. Catat kredensial
 
-Dashboard â†' **Project Settings â†' API**:
+Dashboard > **Project Settings > API**:
 
 | Nilai | Dipakai untuk |
 |---|---|
@@ -82,7 +82,7 @@ Dashboard â†' **Project Settings â†' API**:
 | service_role key | Worker saja (`wrangler secret put`) |
 
 > **Jangan pernah** memakai `service_role` di frontend. Kunci itu melewati
-> seluruh RLS.
+> seluruh policy RLS.
 
 ---
 
@@ -99,7 +99,7 @@ cp .env.example .env
 
 ```dotenv
 VITE_SUPABASE_URL=https://xxxxxxxxxxxx.supabase.co
-VITE_SUPABASE_ANON_KEY=eyJhbGciOiâ€¦
+VITE_SUPABASE_ANON_KEY=eyJhbGciOi...
 
 # Worker (dapat setelah langkah Deploy Worker; kosongkan dulu)
 VITE_API_BASE_URL=
@@ -111,15 +111,16 @@ VITE_TV_PIN=1234
 Jalankan:
 
 ```bash
-npm run dev          # frontend â†' http://localhost:5173
-npm run worker:dev   # Worker  â†' http://localhost:8788 (opsional)
+npm run dev          # frontend, http://localhost:5173
+npm run worker:dev   # Worker, http://localhost:8788 (opsional)
 ```
 
-Untuk feature Worker (login, dashboard admin) yang memanggil `VITE_API_BASE_URL`,
+Untuk fitur Worker (login, dashboard admin) yang memanggil `VITE_API_BASE_URL`,
 jalankan `npm run worker:dev` di terminal terpisah lalu isi `VITE_API_BASE_URL`
-dengan `http://localhost:8788`, **lalu build ulang** â€" nilai env di-inline ke
-bundle saat build, jadi mengisi setelah `npm run dev` berjalan tidak berpengaruh.
-Gunakan `npm run build && npm run preview` untuk menguji jalur produksi.
+dengan `http://localhost:8788`, **lalu build ulang**. Nilai env di-inline ke
+bundle saat build, jadi mengisinya setelah `npm run dev` berjalan tidak
+berpengaruh. Gunakan `npm run build && npm run preview` untuk menguji jalur
+produksi.
 
 ---
 
@@ -132,20 +133,20 @@ dengan langkah perbaikan yang konkret:
 
 | Pemeriksaan | Yang diverifikasi |
 |---|---|
-| Environment | URL, bentuk JWT anon key, deteksiè¯¯ service_role |
+| Environment | URL, bentuk JWT anon key, deteksi service_role yang salah |
 | Inisialisasi klien | Klien Supabase terbentuk |
 | Keterjangkauan REST | Server merespons (401 dari root itu **normal**) |
-| `categories` | Tabel ada + policy SELECT |
-| `queue_entries` | Tabel ada + policy SELECT |
-| `settings` | Tabel ada + seed |
+| `categories` | Tabel ada dan policy SELECT berfungsi |
+| `queue_entries` | Tabel ada dan policy SELECT berfungsi |
+| `settings` | Tabel ada dan seed sudah masuk |
 | Proteksi RLS | `INSERT` anon **harus ditolak** |
 | Grant RPC | `next_queue_number` **harus menutup** untuk anon |
 | Realtime | Berlangganan berhasil |
 | Auth health | `/auth/v1/health` merespons |
 | Worker | `/api/health` (dilewati bila belum dikonfigurasi) |
 
-Untuk melihat diagnosis meski halaman tersebut disembunyikan di produksi, jalankan
-`npm run dev` â€" route `devOnly` sengaja diblokir pada build produksi.
+Route `devOnly` sengaja diblokir pada build produksi, jadi halaman ini hanya
+muncul saat `npm run dev`.
 
 ---
 
@@ -160,24 +161,24 @@ node scripts/hash-password.mjs "#Pass123" owner@example.com owner --temp
 Perintah itu mencetak hash argon2id **dan** statement `INSERT` siap tempel.
 Jalankan statement tersebut di Supabase SQL Editor.
 
-> Nonaktifkan riwayat shell setelahnya: password ada di riwayat perintah.
-> Alternatif tanpa menyimpan password di shell: pilih sendiri passwordnya
-> dan tempel langsung ke SQL Editor.
+> Nonaktifkan riwayat shell setelahnya, karena password tersimpan di riwayat
+> perintah. Alternatif tanpa meninggalkan jejak: pilih sendiri passwordnya
+> lalu tempel langsung ke SQL Editor.
 
-Untuk menambah admin, bisa juga lewat **Pengaturan Owner â†' Kelola Akun**. Password
-yang diberikan owner selalu berstatus *sementara*: admin wajib menggantinya saat
-login pertama.
+Untuk menambah admin, bisa juga lewat **Pengaturan Owner > Kelola Akun**.
+Password yang diberikan owner selalu berstatus *sementara*: admin wajib
+menggantinya saat login pertama.
 
 ### Alur pendaftaran
 
-Klik kartu kategori â†' masukkan nama â†' konfirmasi.
+Klik kartu kategori, masukkan nama, konfirmasi.
 
 1. Data antrian **disimpan lebih dulu** dengan `print_status = 'pending'`.
 2. Sistem mencoba mencetak tiket.
 3. Bila gagal: nomor **tetap ada**, ditandai `print_status = 'failed'`, dan
-   muncul tombol **Cetak Ulang** / **Lewati**.
+   muncul tombol **Cetak Ulang** atau **Lewati**.
 
-Urutannya disengaja: kalau penyimpanan dilakukan setelah cetak, kegagalan
+Urutannya disengaja. Kalau penyimpanan dilakukan setelah cetak, kegagalan
 printer akan menghilangkan nomor antrian pelanggan.
 
 ---
@@ -193,7 +194,7 @@ npm install
 npx wrangler login
 ```
 
-Set secret (nilai akan disimpan terenkripsi di Cloudflare, bukan di repo):
+Set secret (disimpan terenkripsi di Cloudflare, bukan di repo):
 
 ```bash
 npx wrangler secret put SUPABASE_URL            # sama dengan VITE_SUPABASE_URL
@@ -207,23 +208,23 @@ Lalu deploy:
 npx wrangler deploy
 ```
 
-Catat domain yang muncul, mis. `https://antrian-api.<subdomain>.workers.dev`.
-Uji dulu:
+Catat domain yang muncul, misalnya
+`https://antrian-api.<subdomain>.workers.dev`, lalu uji:
 
 ```bash
 curl https://antrian-api.<subdomain>.workers.dev/api/health
 # {"status":"ok","database":"connected",...}
 ```
 
-Setelah itu, kembalikan `ALLOWED_ORIGIN` di `worker/wrangler.toml` ke domain
+Setelah itu kembalikan `ALLOWED_ORIGIN` di `worker/wrangler.toml` ke domain
 frontend Anda (pisahkan dengan koma bila lebih dari satu) lalu deploy ulang.
-Tanpa itu Worker tetap menerima cookie dari asal mana pun - tidak ideal untuk
-produksi.
+Tanpa itu Worker tetap menerima cookie dari asal mana pun, yang tidak ideal
+untuk produksi.
 
-> Token `JWT_REFRESH_SECRET` memang tidak ada: refresh token berupa string
-> acak yang disimpan sebagai SHA-256, bukan JWT. Tabelnya punya `revoked_at`
-> sehingga pencabutan berlaku seketika - sesuatu yang tidak bisa dilakukan
-> bila refresh token berupa JWT.
+> Tidak ada `JWT_REFRESH_SECRET`. Refresh token berupa string acak yang
+> disimpan sebagai SHA-256, bukan JWT. Tabelnya punya `revoked_at` sehingga
+> pencabutan berlaku seketika, sesuatu yang tidak bisa dilakukan bila refresh
+> token berupa JWT.
 
 ---
 
@@ -237,15 +238,14 @@ npm run build
 ```
 
 Hasilnya ada di `dist/`. Unggah ke hosting statis mana pun (Cloudflare Pages,
-Netlify, Vercel, GitHub Pages, atau server sendiri).
+Netlify, Vercel, GitHub Pages, atau server sendiri). Semua request memakai path
+relatif, jadi aplikasi bisa dipasang di sub-path.
 
-Semua request memakai path relatif, jadi aplikasi bisa dipasang di sub-path.
-
-### Checklist sebelum produksi
+### Daftar periksa sebelum produksi
 
 - [ ] `VITE_API_BASE_URL` menunjuk Worker yang sudah ter-deploy
 - [ ] `ALLOWED_ORIGIN` di Worker sesuai dengan domain frontend
-- [ ] `VITE_TV_PIN` diisi (minimal 4 karakter) â€" tanpa itu layar TV tidak terbuka
+- [ ] `VITE_TV_PIN` diisi (minimal 4 karakter), tanpa itu layar TV tidak terbuka
 - [ ] `supabase/02_seed_and_fixes.sql` sudah dijalankan
 - [ ] Akun owner dibuat dan password sementara sudah diganti
 
@@ -254,17 +254,17 @@ Semua request memakai path relatif, jadi aplikasi bisa dipasang di sub-path.
 ## Menguji
 
 ```bash
-npm run verify       # seluruh suite (cepat, butuh RAM cukup)
-npm run verify:sequential   # suite per satu, jeda di antaranya (mesin kecil)
+npm run verify              # seluruh suite (cepat, butuh RAM cukup)
+npm run verify:sequential   # suite satu per satu (mesin kecil)
 ```
 
 Isi `verify`:
 
 | Suite | Cakupan |
 |---|---|
-| `typecheck` | TypeScript + Vue SFC |
+| `typecheck` | TypeScript dan Vue SFC |
 | `test:unit` | Hashing password, ESC/POS, logika TV, tanggal antrian |
-| `test:worker` | API auth lewat workerd asli + mock PostgREST |
+| `test:worker` | API auth lewat workerd asli dan mock PostgREST |
 | `test:queue` | API antrian: aturan satu serving, panggil ulang, cetak |
 | `test:e2e:auth` | Login, guard peran, ganti password paksa, sesi |
 | `test:e2e:admin` | Pendaftaran, navigasi antrian, jalur cetak gagal |
@@ -273,14 +273,14 @@ Isi `verify`:
 | `smoke:*` | Empat skenario diagnosis koneksi |
 | `assets:verify` | Kelengkapan aset PWA |
 
-Tidak ada satu pun test yang memerlukan Supabase atau Worker sungguhan â€"
-semuanya memakai mock, jadi aman dijalankan tanpa menyentuh data produksi.
+Tidak ada satu pun test yang memerlukan Supabase atau Worker sungguhan. Semuanya
+memakai mock, jadi aman dijalankan tanpa menyentuh data produksi.
 
 Skrip lain:
 
 ```bash
 npm run hash-password "#Pass123" owner@example.com owner --temp
-npm run assets:generate     # buat ulang ikon PWA
+npm run assets:generate        # buat ulang ikon PWA
 ```
 
 ---
@@ -290,23 +290,23 @@ npm run assets:generate     # buat ulang ikon PWA
 ### "Tidak bisa menghubungi Worker API"
 
 `VITE_API_BASE_URL` kosong, atau Worker belum ter-deploy. Ingat bahwa nilai env
-di-inline saat build â€" isi ulang lalu **build ulang**.
+di-inline saat build: isi ulang lalu **build ulang**.
 
 ### Login selalu gagal dengan 401
 
-- Password belum diganti setelah owner meresetnya (`is_password_temporary` masih
-  `true`).
+- Password belum diganti setelah owner meresetnya, sehingga
+  `is_password_temporary` masih `true`.
 - `JWT_ACCESS_SECRET` belum di-set, atau berubah setelah token diterbitkan.
-- `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` di Worker salah sehingga akun
+- `SUPABASE_URL` atau `SUPABASE_SERVICE_ROLE_KEY` di Worker salah sehingga akun
   tidak ditemukan.
 
 ### Printer tidak ditemukan
 
 `requestDevice()` hanya boleh dipanggil **dari gestur pengguna**. Pilih printer
-lewat tombol **Hubungkan Printer**, bukan dipicu otomatis.
+lewat tombol **Hubungkan Printer**, jangan dipicu otomatis.
 
 Bila printer thermal tidak mengekspos UUID standar, Worker mencoba SPP
-(`0000ff00-â€¦`) lalu fallback ke GAP (`00001800-â€¦`). Gagal keduanya biasanya
+(`0000ff00-...`) lalu fallback ke GAP (`00001800-...`). Gagal keduanya biasanya
 berarti printer belum dalam mode pairing.
 
 ### Dashboard TV tidak pernah berubah
@@ -318,18 +318,19 @@ alter publication supabase_realtime add table public.queue_entries;
 ```
 
 Aplikasi tetap bekerja lewat polling 15 detik sebagai jaring pengaman, dan
-badge akan menampilkan "Terhubung (penyegaran berkala)" alih-alih "Menghubungkanâ€¦".
+badge akan menampilkan "Terhubung (penyegaran berkala)" alih-alih
+"Menghubungkan...".
 
 ### Layar TV menampilkan pesan konfigurasi PIN
 
 `VITE_TV_PIN` belum diisi atau kurang dari 4 karakter. Ini disengaja: membuka
 layar tanpa PIN lebih buruk daripada menolaknya.
 
-### `VirtualAlloc failed` / proses berhenti sendiri saat test
+### `VirtualAlloc failed` atau proses berhenti sendiri saat test
 
 Mesin kehabisan memori. Pastikan pagefile Windows aktif
-(`scripts\setup-pagefile.cmd`, jalankan sebagai administrator lalu restart), lalu
-gunakan `npm run verify:sequential`.
+(`scripts\setup-pagefile.cmd`, jalankan sebagai administrator lalu restart),
+kemudian gunakan `npm run verify:sequential`.
 
 ---
 
@@ -344,7 +345,7 @@ worker/             Cloudflare Worker (paket npm terpisah)
   src/lib/          Auth, token, antrian, pengaturan
   test/             Unit test
 scripts/            Build aset, mock, E2E, orkestrasi verifikasi
-supabase/           SQL perbaikan & seed
+supabase/           SQL perbaikan dan seed
 ```
 
 ---

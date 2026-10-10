@@ -2,10 +2,10 @@
  * Normalisasi karakter Unicode di file teks.
  *
  * Setelah penulisan berulang kali lewat beberapa editor, karakter tanda baca
- * kurung miring dan beberapa karakter lain bisa rusak menjadi U+FFFD. File
- * ini menyapanya kembali ke ASCII agar diff di git tetap terbaca.
+ * kurung miring dan beberapa karakter lain bisa rusak menjadi U+FFFD. File ini
+ * menyapanya kembali ke ASCII agar diff di git tetap terbaca.
  *
- * Jalankan: node scripts/normalize-text.mjs [file...]
+ * Jalankan: node scripts/normalize-text.mjs <file...>
  */
 import { readFileSync, writeFileSync } from 'node:fs'
 import process from 'node:process'
