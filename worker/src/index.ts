@@ -24,6 +24,19 @@ import {
 } from './lib/http'
 import { createUncachedClient } from './lib/supabaseAdmin'
 import {
+  createCategory,
+  createUser,
+  DEFAULT_TEMP_PASSWORD,
+  deactivateCategory,
+  listAllCategories,
+  listUsers,
+  readSettings,
+  resetUserPassword,
+  setUserActive,
+  updateCategory,
+  writeSetting,
+} from './lib/settings'
+import {
   callNext,
   createQueueEntry,
   listCategories,
@@ -392,6 +405,127 @@ const handler = async (request: Request, env: Env): Promise<Response> => {
 
     const updated: UserRow = { ...user, password_hash: newHash, is_password_temporary: false }
     return issueSession(request, updated, env)
+  }
+
+  // ================= PENGATURAN OWNER =================
+  //
+  // Rute di bawah hanya untuk role `owner`. `admin` mendapat 403 — bukan
+  // 401, karena sesi-nya valid, hanya tidak cukup hak akses.
+  if (url.pathname.startsWith('/api/settings') || url.pathname.startsWith('/api/admin')) {
+    if (!bearer) return failWith('Tidak terautentikasi.', 401)
+    if (!payload) return failWith('Token tidak valid atau kedaluwarsa.', 401)
+    if (payload.role !== 'owner') {
+      return failWith('Hanya owner yang boleh mengakses pengaturan.', 403, 'forbidden')
+    }
+
+    // --- Kategori ---
+    if (url.pathname === '/api/admin/categories' && request.method === 'GET') {
+      try {
+        return respond({ categories: await listAllCategories(env) })
+      } catch (err) {
+        return failWith(err instanceof Error ? err.message : 'Gagal membaca kategori.', 500)
+      }
+    }
+
+    if (url.pathname === '/api/admin/categories' && request.method === 'POST') {
+      const body = await readJson<Record<string, unknown>>(request)
+      if (!body) return failWith('Body JSON tidak valid.', 400)
+      try {
+        return respond({ category: await createCategory(env, body) }, 201)
+      } catch (err) {
+        // Validasi domain jadi 4xx, bukan 500.
+        return failWith(err instanceof Error ? err.message : 'Gagal membuat kategori.', 400)
+      }
+    }
+
+    const catPatch = /^\/api\/admin\/categories\/([0-9a-f-]{36})$/i.exec(url.pathname)
+    if (catPatch && request.method === 'PATCH') {
+      const body = await readJson<Record<string, unknown>>(request)
+      if (!body) return failWith('Body JSON tidak valid.', 400)
+      try {
+        return respond({ category: await updateCategory(env, catPatch[1], body) })
+      } catch (err) {
+        return failWith(err instanceof Error ? err.message : 'Gagal memperbarui kategori.', 400)
+      }
+    }
+
+    if (catPatch && request.method === 'DELETE') {
+      try {
+        return respond({ category: await deactivateCategory(env, catPatch[1]) })
+      } catch (err) {
+        return failWith(err instanceof Error ? err.message : 'Gagal menonaktifkan kategori.', 400)
+      }
+    }
+
+    // --- Manage akun ---
+    if (url.pathname === '/api/admin/users' && request.method === 'GET') {
+      try {
+        return respond({ users: await listUsers(env) })
+      } catch (err) {
+        return failWith(err instanceof Error ? err.message : 'Gagal membaca akun.', 500)
+      }
+    }
+
+    if (url.pathname === '/api/admin/users' && request.method === 'POST') {
+      const body = await readJson<Record<string, unknown>>(request)
+      if (!body) return failWith('Body JSON tidak valid.', 400)
+      try {
+        const created = await createUser(env, {
+          email: String(body.email ?? ''),
+          password: String(body.password ?? ''),
+          role: String(body.role ?? 'admin'),
+          displayName: body.displayName ? String(body.displayName) : undefined,
+        })
+        return respond({ user: created, temporaryPassword: DEFAULT_TEMP_PASSWORD }, 201)
+      } catch (err) {
+        return failWith(err instanceof Error ? err.message : 'Gagal membuat akun.', 400)
+      }
+    }
+
+    const userReset = /^\/api\/admin\/users\/([0-9a-f-]{36})\/reset-password$/i.exec(url.pathname)
+    if (userReset && request.method === 'POST') {
+      try {
+        const updated = await resetUserPassword(env, userReset[1])
+        return respond({ user: updated, temporaryPassword: DEFAULT_TEMP_PASSWORD })
+      } catch (err) {
+        return failWith(err instanceof Error ? err.message : 'Gagal mereset password.', 400)
+      }
+    }
+
+    const userActive = /^\/api\/admin\/users\/([0-9a-f-]{36})\/active$/i.exec(url.pathname)
+    if (userActive && request.method === 'POST') {
+      const body = await readJson<{ isActive?: unknown }>(request)
+      if (typeof body?.isActive !== 'boolean') {
+        return failWith('Field "isActive" harus boolean.', 400)
+      }
+      try {
+        return respond({ user: await setUserActive(env, userActive[1], body.isActive, payload.sub) })
+      } catch (err) {
+        return failWith(err instanceof Error ? err.message : 'Gagal mengubah status akun.', 400)
+      }
+    }
+
+    // --- Pengaturan ---
+    if (url.pathname === '/api/settings' && request.method === 'GET') {
+      try {
+        return respond({ settings: await readSettings(env) })
+      } catch (err) {
+        return failWith(err instanceof Error ? err.message : 'Gagal membaca pengaturan.', 500)
+      }
+    }
+
+    if (url.pathname === '/api/settings' && request.method === 'PATCH') {
+      const body = await readJson<{ key?: unknown; value?: unknown }>(request)
+      if (!body) return failWith('Body JSON tidak valid.', 400)
+      const key = typeof body.key === 'string' ? body.key : ''
+      if (!key) return failWith('Field "key" wajib diisi.', 400)
+
+      try {
+        return respond({ setting: await writeSetting(env, key, body.value, payload.sub) })
+      } catch (err) {
+        return failWith(err instanceof Error ? err.message : 'Gagal menyimpan pengaturan.', 400)
+      }
+    }
   }
 
   // ================= OPERASIONAL ANTRIAN =================

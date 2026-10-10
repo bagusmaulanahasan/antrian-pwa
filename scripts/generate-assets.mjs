@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Generator aset PWA.
  *
  * Membuat ikon PNG tanpa dependensi gambar eksternal: SVG dirender menjadi
@@ -45,7 +45,7 @@ async function svgToPng(svg, size) {
   const browser = await puppeteer.launch({
     executablePath: CHROME,
     headless: 'new',
-    args: ['--no-sandbox', '--disable-dev-shm-usage'],
+    args: ['--no-sandbox', '--disable-dev-shm-usage', '--js-flags=--max-old-space-size=256', '--disable-gpu', '--disable-extensions'],
   })
   try {
     const page = await browser.newPage()

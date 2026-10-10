@@ -47,7 +47,13 @@ Status: ⬜ belum · 🟨 dikerjakan · ✅ selesai (lolos verifikasi) · ⚠️
 
 - ✅ **T13** Dashboard TV: PIN, realtime + polling, pengumuman suara
       → 26 E2E + 15 unit test
-- ⬜ **T14** `wrangler deploy` ke workers.dev + dokumentasi
+
+## Pengaturan Owner
+
+- ✅ **T16** Kategori, template suara & cetak, jam reset, kelola akun admin
+      → Worker `/api/admin/*` + `/api/settings`, 44 E2E
+
+- ⬜ **T14** `wrangler deploy` ke workers.dev + dokumentasi (README)
 
 ## Catatan T13 — Dashboard TV
 
@@ -74,6 +80,17 @@ antrean diulang saat halaman kembali terlihat. Pengumuman hanya dipicu saat
 **Tidak terverifikasi otomatis:** kualitas suara aktual di perangkat TV (bukan
 headphone). Yang terverifikasi adalah pemicu pengumuman, urutan antrean, dan
 perilaku saat halaman gagal memuat data.
+
+## Catatan T16 — Validasi di server
+
+Semua validasi pengaturan berada di Worker, bukan hanya di frontend — satu-satunya
+tempat yang tidak bisa dilewati. Contoh yang diuji: `reset_hour` di luar 0-23
+ditolak dan nilai lama TIDAK berubah; warna kategori harus hex; password baru
+dari owner selalu berstatus `is_password_temporary`, jadi admin wajib
+menggantinya saat login pertama.
+
+Role `admin` mendapat **403** (bukan 401) untuk `/api/settings` dan
+`/api/admin/*` — sesinya valid, hanya hak aksesnya kurang.
 
 ## Catatan T11 — printer thermal
 
@@ -182,7 +199,34 @@ pernah boleh dibaca dari sisi klien. Akses tulis dipusatkan ke RPC
 Keuntungannya: seluruh jalur tulis tervalidasi di satu tempat, dan
 `token_hash` yang bukan SHA-256 hex ditolak sebelum menyentuh tabel.
 
-### Mock harus meniru ketatnya PostgREST
+### Mutasi PostgREST hanya mengembalikan baris bila diminta
+
+`.update().eq(...).select(...).maybeSingle()` **tidak** selalu mengirim
+`Accept: application/vnd.pgrst.object`. PostgREST mengembalikan baris yang
+terpengaruh hanya bila ada `Prefer: return=representation`; selain itu
+responsnya array kosong.
+
+Karena mock sempat mengembalikan `[]` untuk semua mutasi, `maybeSingle()`
+selalu menghasilkan `null` — dan kode produksi menyimpulkan "data tidak
+ditemukan" **padahal barisnya sudah berubah**. Gejalanya menipu: update kategori
+"berhasil" (terlihat berubah di database) tapi Worker membalas 400, dan test
+hanya memeriksa state sehingga miss.
+
+Sekarang mock memakai `respondMutation()` yang meniru aturan itu persis.
+
+## Catatan lingkungan
+
+### Memori: jalankan suite satu per satu
+
+`npm run verify` merantai seluruh suite dalam satu proses shell. Pada mesin
+kecil (RAM 8 GB tanpa pagefile) build Vite + Chrome headless + workerd yang
+beruntun dapat membuat Windows kehabisan memori commit — gejalanya
+`VirtualAlloc ... failed with errno=1455` atau `Zone Allocation failed`, yang
+sama sekali tidak berkaitan dengan kode.
+
+`npm run verify:sequential` menjalankan tiap suite sebagai proses terpisah
+dengan jeda, sehingga memori dilepas penuh di antaranya. Selain itu, script
+setup-pagefile.cmd membantu mengaktifkan pagefile Windows.
 
 Tiga kegagalan test awal berasal dari mock yang terlalu longgar:
 

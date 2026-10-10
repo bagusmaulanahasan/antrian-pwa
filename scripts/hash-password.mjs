@@ -1,4 +1,4 @@
-/**
+﻿/**
  * CLI untuk membangkitkan hash argon2id dan statement SQL pembuatan akun.
  *
  * Dipakai owner/admin untuk membuat akun tanpa Login Dashboard Supabase.
@@ -47,11 +47,11 @@ console.log('\n=== Verifikasi ===')
 const { verifyPassword } = await import('../worker/src/lib/password.ts')
 const ok = await verifyPassword(hashed, password)
 const bad = await verifyPassword(hashed, 'password-yang-salah')
-console.log(`  password benar      → ${ok ? 'LOLOS' : 'GAGAL'}`)
-console.log(`  password salah      → ${bad ? 'LOLOS (BAHAYA!)' : 'ditolak (benar)'}`)
+console.log(`  password benar      â†’ ${ok ? 'LOLOS' : 'GAGAL'}`)
+console.log(`  password salah      â†’ ${bad ? 'LOLOS (BAHAYA!)' : 'ditolak (benar)'}`)
 
 if (!ok) {
-  console.error('\nVerifikasi gagal — jangan gunakan hash ini.')
+  console.error('\nVerifikasi gagal â€” jangan gunakan hash ini.')
   process.exit(1)
 }
 if (!isArgon2Hash(hashed)) {

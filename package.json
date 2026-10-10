@@ -18,13 +18,15 @@
     "test:e2e:auth": "node scripts/auth-e2e.mjs",
     "test:e2e:admin": "node scripts/admin-e2e.mjs",
     "test:e2e:tv": "node scripts/tv-e2e.mjs",
+    "test:e2e:owner": "node scripts/owner-e2e.mjs",
     "worker:dev": "node node_modules/wrangler/bin/wrangler.js dev --config worker/wrangler.toml",
     "worker:deploy": "node node_modules/wrangler/bin/wrangler.js deploy --config worker/wrangler.toml",
     "assets:generate": "node scripts/generate-assets.mjs",
     "assets:verify": "node scripts/verify-assets.mjs",
     "test:unit": "node --experimental-strip-types --test worker/test/*.test.ts src/test/*.test.ts",
     "hash-password": "node scripts/hash-password.mjs",
-    "verify": "npm run typecheck && npm run test:unit && npm run test:worker && npm run test:queue && npm run test:e2e:auth && npm run test:e2e:admin && npm run test:e2e:tv && npm run smoke:mock && npm run smoke:mock:rls && npm run smoke:mock:notable && npm run smoke:mock:rpcopen && npm run build && npm run assets:verify"
+    "verify": "npm run typecheck && npm run test:unit && npm run test:worker && npm run test:queue && npm run test:e2e:auth && npm run test:e2e:admin && npm run test:e2e:tv && npm run test:e2e:owner && npm run smoke:mock && npm run smoke:mock:rls && npm run smoke:mock:notable && npm run smoke:mock:rpcopen && npm run build && npm run assets:verify",
+    "verify:sequential": "node scripts/run-verify.mjs"
   },
   "dependencies": {
     "@noble/hashes": "^2.4.0",

@@ -1,7 +1,7 @@
-/**
+﻿/**
  * E2E Dashboard TV.
  *
- * TV tidak punya akun — ia membaca langsung dari Supabase memakai anon key.
+ * TV tidak punya akun â€” ia membaca langsung dari Supabase memakai anon key.
  * Yang diuji:
  *   - layar kunci PIN benar-benar menahan dashboard
  *   - badge koneksi, nomor dilayani, dan urutan antrean (pending di atas)
@@ -69,7 +69,7 @@ async function waitForHttp(url, timeoutMs = 90000) {
     } catch (e) {
       last = e.message
     }
-    await new Promise((r) => setTimeout(r, 400))
+    await new Promise((r) => setTimeout(r, 2500))
   }
   throw new Error(`timeout menunggu ${url} (${last})`)
 }
@@ -102,7 +102,7 @@ function check(cond, label, extra = '') {
     console.log(`  PASS  ${label}`)
   } else {
     results.fail.push(label)
-    console.log(`  FAIL  ${label}${extra ? ` — ${extra}` : ''}`)
+    console.log(`  FAIL  ${label}${extra ? ` â€” ${extra}` : ''}`)
   }
 }
 function section(name) {
@@ -111,7 +111,7 @@ function section(name) {
 
 const testid = (id) => `[data-testid="${id}"]`
 
-/** Isi antrian langsung di state mock (melewati Worker — TV tidak memakainya). */
+/** Isi antrian langsung di state mock (melewati Worker â€” TV tidak memakainya). */
 function seedQueue(entries) {
   mockState.queueEntries.length = 0
   for (const e of entries) mockState.queueEntries.push(e)
@@ -170,7 +170,6 @@ try {
     const child = spawn(
       process.execPath,
       [
-        '--max-old-space-size=4096',
         path.resolve('node_modules/vite/bin/vite.js'),
         'build',
         '--outDir',
@@ -214,7 +213,7 @@ try {
   browser = await puppeteer.launch({
     executablePath: process.env.CHROME_PATH ?? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
     headless: 'new',
-    args: ['--no-sandbox', '--disable-dev-shm-usage'],
+    args: ['--no-sandbox', '--disable-dev-shm-usage', '--js-flags=--max-old-space-size=256', '--disable-gpu', '--disable-extensions'],
   })
 
   // ---------------- 1. Layar PIN ----------------
@@ -260,8 +259,8 @@ try {
   // ---------------- 3. Badge & status koneksi ----------------
   section('[3] Indikator koneksi')
   {
-    // Badge tidak boleh menggantung di "Menghubungkan…" selamanya ketika
-    // Realtime tidak tersedia — polling harus turun ke status yang jujur.
+    // Badge tidak boleh menggantung di "Menghubungkanâ€¦" selamanya ketika
+    // Realtime tidak tersedia â€” polling harus turun ke status yang jujur.
     await page
       .waitForFunction(
         () => {
@@ -282,7 +281,7 @@ try {
     )
     check(
       !conn.includes('Menghubungkan'),
-      'badge tidak menggantung di "Menghubungkan…" saat Realtime gagal',
+      'badge tidak menggantung di "Menghubungkanâ€¦" saat Realtime gagal',
       conn,
     )
     check(!conn.includes('Terputus'), 'badge tidak menunjukkan "Terputus" saat online')
@@ -327,7 +326,7 @@ try {
         .waitForSelector(testid('tv-disable-voice'), { timeout: 15000 })
         .catch(() => {})
       const active = (await page.$(testid('tv-disable-voice'))) !== null
-      check(active, 'suara aktif — tombol berubah menjadi "Suara Aktif"')
+      check(active, 'suara aktif â€” tombol berubah menjadi "Suara Aktif"')
 
       // Matikan lagi.
       const off = await page.$(testid('tv-disable-voice'))
@@ -348,7 +347,7 @@ try {
   section('[6] Pembaruan saat data berubah')
   {
     // Tutup langganan lebih dulu supaya perubahan mock terlihat lewat reload
-    // data yang dipicu Realtime ATAU polling — keduanya harus menampilkan
+    // data yang dipicu Realtime ATAU polling â€” keduanya harus menampilkan
     // data terbaru, itu yang pengguna perceive sebagai "live".
     mockState.queueEntries[0].status = 'done'
     const newServing = makeEntry(6, 'serving', 'Rina Amelia', catRI, {
@@ -394,7 +393,7 @@ try {
 
   section('[8] Error console')
   // Mock tidak mendukung WebSocket realtime (selalu 426), dan realtime memang
-  // opsional — polling menjadi jaring pengaman. Error handshake karena itu
+  // opsional â€” polling menjadi jaring pengaman. Error handshake karena itu
   // sudah diharapkan di lingkungan test.
   const realErrors = consoleErrors.filter(
     (e) =>
@@ -417,7 +416,7 @@ try {
   if (browser) await browser.close()
   stopAll()
   mockServer.close()
-  await new Promise((r) => setTimeout(r, 400))
+  await new Promise((r) => setTimeout(r, 2500))
 
   console.log(`\n${'='.repeat(58)}`)
   console.log(`  ${results.pass} lulus, ${results.fail.length} gagal`)

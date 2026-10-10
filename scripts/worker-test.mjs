@@ -108,7 +108,7 @@ async function waitFor(url, timeoutMs = 90000) {
     } catch (e) {
       last = e.message
     }
-    await new Promise((r) => setTimeout(r, 400))
+    await new Promise((r) => setTimeout(r, 2500))
   }
   throw new Error(`timeout menunggu ${url} (${last})`)
 }
@@ -482,7 +482,7 @@ try {
   stopAll()
   restoreDevVars()
   mockServer.close()
-  await new Promise((r) => setTimeout(r, 400))
+  await new Promise((r) => setTimeout(r, 2500))
 }
 
 process.exit(exitCode)

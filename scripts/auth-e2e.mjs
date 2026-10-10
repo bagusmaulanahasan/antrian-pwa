@@ -261,7 +261,7 @@ async function waitForHttp(url, timeoutMs = 90000) {
     } catch (e) {
       last = e.message
     }
-    await new Promise((r) => setTimeout(r, 400))
+    await new Promise((r) => setTimeout(r, 2500))
   }
   throw new Error(`timeout menunggu ${url} (${last})`)
 }
@@ -394,7 +394,6 @@ try {
     const child = spawn(
       process.execPath,
       [
-        '--max-old-space-size=4096',
         path.resolve('node_modules/vite/bin/vite.js'),
         'build',
         '--outDir',
@@ -443,7 +442,7 @@ try {
   browser = await puppeteer.launch({
     executablePath: CHROME,
     headless: 'new',
-    args: ['--no-sandbox', '--disable-dev-shm-usage'],
+    args: ['--no-sandbox', '--disable-dev-shm-usage', '--js-flags=--max-old-space-size=256', '--disable-gpu', '--disable-extensions'],
   })
 
   // ---------------- login guard ----------------
@@ -642,7 +641,8 @@ try {
     await submitLogin(page, 'owner@test.local', TEST_PASSWORD)
     await page.waitForFunction(() => location.pathname === '/owner', { timeout: 20000 })
 
-    await page.click('[data-testid="header-logout"]')
+    // Owner berada di halaman pengaturan, yang memakai testid `owner-logout`.
+    await page.click('[data-testid="owner-logout"]')
     await page.waitForFunction(() => location.pathname === '/login', { timeout: 15000 })
     check(true, 'logout kembali ke halaman login')
 
@@ -688,7 +688,7 @@ try {
   if (devVarsExisted && devVarsBackup !== null) writeFileSync(devVarsPath, devVarsBackup)
   else if (existsSync(devVarsPath)) rmSync(devVarsPath)
   mockPg.close()
-  await new Promise((r) => setTimeout(r, 400))
+  await new Promise((r) => setTimeout(r, 2500))
 
   console.log(`\n${'='.repeat(58)}`)
   console.log(`  ${results.pass} lulus, ${results.fail.length} gagal`)

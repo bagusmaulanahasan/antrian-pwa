@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Integration test API antrian (Worker + mock PostgREST).
  *
  * Menguji aturan bisnis dari PRD:
@@ -71,7 +71,7 @@ async function waitForHttp(url, timeoutMs = 90000) {
     } catch (e) {
       last = e.message
     }
-    await new Promise((r) => setTimeout(r, 400))
+    await new Promise((r) => setTimeout(r, 2500))
   }
   throw new Error(`timeout menunggu ${url} (${last})`)
 }
@@ -84,7 +84,7 @@ function check(cond, label, extra = '') {
     console.log(`  PASS  ${label}`)
   } else {
     results.fail.push(label)
-    console.log(`  FAIL  ${label}${extra ? ` — ${extra}` : ''}`)
+    console.log(`  FAIL  ${label}${extra ? ` â€” ${extra}` : ''}`)
   }
 }
 function section(name) {
@@ -181,7 +181,7 @@ try {
       ['GET', '/api/queue/categories'],
     ]) {
       const res = await api(p, { method, body: method === 'POST' ? {} : undefined, useCookies: false })
-      check(res.status === 401, `${method} ${p} tanpa cookie → 401`, `dapat ${res.status}`)
+      check(res.status === 401, `${method} ${p} tanpa cookie â†’ 401`, `dapat ${res.status}`)
     }
 
     const badCookie = await api('/api/queue', { useCookies: false, headers: {} })
@@ -194,7 +194,7 @@ try {
   {
     await login()
     const res = await api('/api/queue/categories')
-    check(res.status === 200, 'daftar kategori → 200', `dapat ${res.status}`)
+    check(res.status === 200, 'daftar kategori â†’ 200', `dapat ${res.status}`)
     categories = res.body?.categories ?? []
     check(categories.length === 3, `3 kategori aktif dikembalikan (dapat ${categories.length})`)
     check(
@@ -218,7 +218,7 @@ try {
       method: 'POST',
       body: { customerName: 'Budi Santoso', categoryId: categories[0].id },
     })
-    check(first.status === 201, 'buat antrian → 201', `dapat ${first.status} ${first.raw}`)
+    check(first.status === 201, 'buat antrian â†’ 201', `dapat ${first.status} ${first.raw}`)
     check(first.body?.entry?.number === 1, 'nomor pertama = 1', JSON.stringify(first.body?.entry?.number))
     check(
       first.body?.entry?.status === 'waiting',
@@ -255,33 +255,33 @@ try {
   section('[4] Validasi input')
   {
     const empty = await api('/api/queue', { method: 'POST', body: { customerName: '' } })
-    check(empty.status === 400, 'nama kosong → 400', `dapat ${empty.status}`)
+    check(empty.status === 400, 'nama kosong â†’ 400', `dapat ${empty.status}`)
 
     const whitespace = await api('/api/queue', { method: 'POST', body: { customerName: '   ' } })
-    check(whitespace.status === 400, 'nama spasi saja → 400', `dapat ${whitespace.status}`)
+    check(whitespace.status === 400, 'nama spasi saja â†’ 400', `dapat ${whitespace.status}`)
 
     const tooLong = await api('/api/queue', {
       method: 'POST',
       body: { customerName: 'x'.repeat(200) },
     })
-    check(tooLong.status === 400, 'nama > 120 karakter → 400', `dapat ${tooLong.status}`)
+    check(tooLong.status === 400, 'nama > 120 karakter â†’ 400', `dapat ${tooLong.status}`)
 
     const badJson = await fetch(`${BASE}/api/queue`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Cookie: [...jar].map(([k, v]) => `${k}=${v}`).join('; ') },
       body: '{rusak',
     })
-    check(badJson.status === 400, 'JSON rusak → 400', `dapat ${badJson.status}`)
+    check(badJson.status === 400, 'JSON rusak â†’ 400', `dapat ${badJson.status}`)
 
     const noBody = await api('/api/queue', { method: 'POST' })
-    check(noBody.status === 400, 'tanpa body → 400', `dapat ${noBody.status}`)
+    check(noBody.status === 400, 'tanpa body â†’ 400', `dapat ${noBody.status}`)
   }
 
   // ---------------- 5. Daftar antrian ----------------
   section('[5] Daftar antrian')
   {
     const res = await api('/api/queue')
-    check(res.status === 200, 'daftar antrian → 200', `dapat ${res.status}`)
+    check(res.status === 200, 'daftar antrian â†’ 200', `dapat ${res.status}`)
     check(res.body?.entries?.length === 3, `3 antrian terdaftar (dapat ${res.body?.entries?.length})`)
     check(res.body?.counts?.waiting === 3, 'counts.waiting = 3', JSON.stringify(res.body?.counts))
     check(Boolean(res.body?.date), 'tanggal antrian dikembalikan', res.body?.date)
@@ -291,7 +291,7 @@ try {
   section('[6] Panggil nomor berikutnya')
   {
     const res = await api('/api/queue/next', { method: 'POST' })
-    check(res.status === 200, 'next → 200', `dapat ${res.status} ${res.raw}`)
+    check(res.status === 200, 'next â†’ 200', `dapat ${res.status} ${res.raw}`)
     if (res.body?.entry?.number !== 1) {
       console.log(`        [debug] next body: ${res.raw}`)
     }
@@ -307,10 +307,10 @@ try {
   // ---------------- 7. Hanya satu serving ----------------
   section('[7] Aturan: hanya satu serving')
   {
-    // Panggil lagi tanpa menyelesaikan yang sekarang — nomor lama harus
+    // Panggil lagi tanpa menyelesaikan yang sekarang â€” nomor lama harus
     // otomatis selesai.
     const res = await api('/api/queue/next', { method: 'POST' })
-    check(res.status === 200, 'next kedua → 200', `dapat ${res.status}`)
+    check(res.status === 200, 'next kedua â†’ 200', `dapat ${res.status}`)
     check(res.body?.entry?.number === 2, 'pindah ke nomor 2', JSON.stringify(res.body?.entry?.number))
 
     const list = await api('/api/queue')
@@ -342,15 +342,15 @@ try {
     const target = list.body.entries[0]
 
     const done = await api(`/api/queue/${target.id}`, { method: 'PATCH', body: { status: 'done' } })
-    check(done.status === 200, 'PATCH status done → 200', `dapat ${done.status} ${done.raw}`)
+    check(done.status === 200, 'PATCH status done â†’ 200', `dapat ${done.status} ${done.raw}`)
     check(done.body?.entry?.status === 'done', 'status jadi done')
     check(Boolean(done.body?.entry?.completed_at), 'completed_at terisi')
 
     const bad = await api(`/api/queue/${target.id}`, { method: 'PATCH', body: { status: 'entah' } })
-    check(bad.status === 400, 'status tidak dikenal → 400', `dapat ${bad.status}`)
+    check(bad.status === 400, 'status tidak dikenal â†’ 400', `dapat ${bad.status}`)
 
     const noStatus = await api(`/api/queue/${target.id}`, { method: 'PATCH', body: {} })
-    check(noStatus.status === 400, 'tanpa field status → 400', `dapat ${noStatus.status}`)
+    check(noStatus.status === 400, 'tanpa field status â†’ 400', `dapat ${noStatus.status}`)
 
     const fakeId = '00000000-0000-0000-0000-000000000000'
     const missing = await api(`/api/queue/${fakeId}`, { method: 'PATCH', body: { status: 'done' } })
@@ -364,7 +364,7 @@ try {
     const done = list.body.entries.find((e) => e.status === 'done')
 
     const res = await api(`/api/queue/${done.id}/recall`, { method: 'POST' })
-    check(res.status === 200, 'recall → 200', `dapat ${res.status} ${res.raw}`)
+    check(res.status === 200, 'recall â†’ 200', `dapat ${res.status} ${res.raw}`)
     check(res.body?.entry?.status === 'waiting', 'status kembali ke waiting', res.body?.entry?.status)
     check(res.body?.entry?.priority > 0, 'priority naik', JSON.stringify(res.body?.entry?.priority))
     check(Boolean(res.body?.entry?.recalled_at), 'recalled_at terisi')
@@ -391,7 +391,7 @@ try {
       method: 'POST',
       body: { printed: true },
     })
-    check(res.status === 200, 'tandai printed → 200', `dapat ${res.status}`)
+    check(res.status === 200, 'tandai printed â†’ 200', `dapat ${res.status}`)
     check(res.body?.entry?.print_status === 'printed', 'print_status = printed')
     check(Boolean(res.body?.entry?.printed_at), 'printed_at terisi')
 
@@ -399,7 +399,7 @@ try {
       method: 'POST',
       body: { printed: 'ya' },
     })
-    check(bad.status === 400, 'printed non-boolean → 400', `dapat ${bad.status}`)
+    check(bad.status === 400, 'printed non-boolean â†’ 400', `dapat ${bad.status}`)
 
     // Cetak ulang dari DB: entry tetap ada walau print gagal.
     const stillThere = mockState.queueEntries.find((e) => e.id === pendingPrint.id)
@@ -424,10 +424,10 @@ try {
   section('[13] Route & validasi misc')
   {
     const unknown = await api('/api/queue/entah')
-    check(unknown.status === 404, 'route tidak dikenal → 404', `dapat ${unknown.status}`)
+    check(unknown.status === 404, 'route tidak dikenal â†’ 404', `dapat ${unknown.status}`)
 
     const badPath = await api('/api/queue/bukan-uuid')
-    check(badPath.status === 404, 'id bukan uuid → 404', `dapat ${badPath.status}`)
+    check(badPath.status === 404, 'id bukan uuid â†’ 404', `dapat ${badPath.status}`)
   }
 } catch (err) {
   console.error('\nFATAL:', err)
@@ -444,7 +444,7 @@ try {
   if (devVarsExisted && devVarsBackup !== null) writeFileSync(devVarsPath, devVarsBackup)
   else if (existsSync(devVarsPath)) rmSync(devVarsPath)
   mockServer.close()
-  await new Promise((r) => setTimeout(r, 400))
+  await new Promise((r) => setTimeout(r, 2500))
 }
 
 process.exit(exitCode)

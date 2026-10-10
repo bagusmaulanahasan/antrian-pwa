@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Menjalankan smoke test terhadap Supabase mock, lewat jalur PRODUCTION.
  *
  * Strategi: `vite build` (env di-inline saat build) lalu `vite preview`.
@@ -46,7 +46,7 @@ function start(label, nodeArgs, env) {
     stdio: ['ignore', 'pipe', 'pipe'],
     env: { ...process.env, ...env },
     windowsHide: true,
-    // shell:false → child.pid adalah proses node itu sendiri, mudah di-kill.
+    // shell:false â†’ child.pid adalah proses node itu sendiri, mudah di-kill.
   })
   const prefix = `[${label}] `
   child.stdout.on('data', (d) => process.stdout.write(prefix + d))
@@ -77,12 +77,12 @@ function stopAll() {
   children.clear()
 }
 
-/** Gagal cepat kalau port sudah dipakai — supaya tidak diam-diam menguji server lama. */
+/** Gagal cepat kalau port sudah dipakai â€” supaya tidak diam-diam menguji server lama. */
 async function assertPortFree(port, label) {
   try {
     await fetch(`http://localhost:${port}/`, { signal: AbortSignal.timeout(1500) })
   } catch {
-    return // tidak ada yang mendengar → port bebas
+    return // tidak ada yang mendengar â†’ port bebas
   }
   throw new Error(
     `Port ${port} (${label}) sedang dipakai proses lain. ` +
@@ -101,7 +101,7 @@ async function waitForHttp(url, timeoutMs = 60000) {
     } catch (err) {
       lastErr = err.message
     }
-    await new Promise((r) => setTimeout(r, 400))
+    await new Promise((r) => setTimeout(r, 2500))
   }
   throw new Error(`timeout menunggu ${url} (${lastErr})`)
 }

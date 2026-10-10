@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Smoke test end-to-end untuk halaman /dev/test-connection.
  *
  * Menjalankan Chrome headless terhadap dev server / preview server untuk
@@ -31,7 +31,7 @@ function assert(cond, message, extra = '') {
   if (cond) {
     console.log(`  PASS  ${message}`)
   } else {
-    console.log(`  FAIL  ${message}${extra ? ` — ${extra}` : ''}`)
+    console.log(`  FAIL  ${message}${extra ? ` â€” ${extra}` : ''}`)
     failures.push(message)
   }
 }
@@ -48,7 +48,7 @@ async function dumpFailureState(page, label) {
   writeFileSync(`${ARTIFACT_DIR}/${label}.html`, await page.content().catch(() => ''))
   writeFileSync(`${ARTIFACT_DIR}/${label}.txt`, text)
   await page.screenshot({ path: `${ARTIFACT_DIR}/${label}.png`, fullPage: true }).catch(() => {})
-  console.log(`\n  !! Halaman gagal render — artefak disimpan ke ${ARTIFACT_DIR}/${label}.*`)
+  console.log(`\n  !! Halaman gagal render â€” artefak disimpan ke ${ARTIFACT_DIR}/${label}.*`)
   console.log(`  !! DOM innerText (200 char pertama): ${JSON.stringify(text.slice(0, 200))}`)
   console.log(`  !! Error console (${consoleErrors.length}):`)
   for (const e of consoleErrors.slice(0, 20)) console.log(`       - ${e}`)
@@ -57,7 +57,7 @@ async function dumpFailureState(page, label) {
 const browser = await puppeteer.launch({
   executablePath: CHROME,
   headless: HEADFUL ? false : 'new',
-  args: ['--no-sandbox', '--disable-dev-shm-usage', '--window-size=1440,900'],
+  args: ['--no-sandbox', '--disable-dev-shm-usage', '--js-flags=--max-old-space-size=256', '--disable-gpu', '--disable-extensions', '--window-size=1440,900'],
 })
 
 try {
@@ -108,7 +108,7 @@ try {
   //
   // Catatan penting: route /dev/test-connection ditandai `devOnly`, dan guard
   // mengalihkan ke beranda saat `import.meta.env.PROD`. Jadi pada build
-  // produksi halaman itu memang TIDAK bisa dibuka — itu perilaku yang benar,
+  // produksi halaman itu memang TIDAK bisa dibuka â€” itu perilaku yang benar,
   // bukan bug. Test beradaptasi: kalau terlempar ke beranda, yang diverifikasi
   // adalah proteksinya; kalau tidak, isi diagnosis yang diuji.
   console.log('\n[2] Navigasi ke /dev/test-connection')
@@ -148,9 +148,9 @@ try {
 
   // --- 3. Diagnosis berjalan ---
   // Lewati bila halaman memang tidak bisa dibuka di build produksi (lihat catatan
-  // di langkah 2) — proteksinya sudah diverifikasi di sana.
+  // di langkah 2) â€” proteksinya sudah diverifikasi di sana.
   if (isProductionBuild) {
-    console.log('\n[3] Halaman diagnosis — dilewati (route devOnly di produksi)')
+    console.log('\n[3] Halaman diagnosis â€” dilewati (route devOnly di produksi)')
   } else {
   console.log('\n[3] Halaman diagnosis')
   let devMounted = mounted
@@ -203,7 +203,7 @@ try {
       checks.length >= expectedMin
         ? `Jumlah kartu pemeriksaan ${checks.length} (>= ${expectedMin})`
         : envOnly
-          ? `Diagnosis berhenti dini karena env kosong (1 kartu) — wajar`
+          ? `Diagnosis berhenti dini karena env kosong (1 kartu) â€” wajar`
           : `Jumlah kartu pemeriksaan ${checks.length}, diharapkan >= ${expectedMin}`,
     )
 
@@ -266,8 +266,8 @@ try {
   // --- 5. Error console ---
   console.log('\n[5] Error console')
   // Skenario diagnosa memang sengaja memicu HTTP error:
-  //   403 → probe RLS membuktikan anon tidak boleh menulis
-  //   401/404 → skenario policy SELECT hilang / tabel belum dibuat
+  //   403 â†’ probe RLS membuktikan anon tidak boleh menulis
+  //   401/404 â†’ skenario policy SELECT hilang / tabel belum dibuat
   // WebSocket 426 hanya muncul saat backend mock (tidak mendukung realtime).
   const allowedStatuses = (process.env.SMOKE_ALLOW_HTTP_STATUS ?? '403')
     .split(',')

@@ -255,6 +255,39 @@ async function handle(req, res) {
  * Evaluasi satu ekspresi filter PostgREST terhadap nilai baris.
  * Mendukung: eq./neq./gt./gte./lt./lte., is.null, not.is.null.
  */
+/** Proyeksi kolom mengikuti `select` PostgREST; `*` berarti semua kolom. */
+const project = (row, select) => {
+  if (!select || select === '*') return { ...row }
+  const cols = select.split(',').map((s) => s.trim())
+  return Object.fromEntries(cols.filter((k) => k in row).map((k) => [k, row[k]]))
+}
+
+/**
+ * Balas hasil mutasi (INSERT/UPDATE) sesuai aturan PostgREST:
+ *  - `Prefer: return=representation` → kembalikan baris yang terpengaruh
+ *  - selain itu                     → kembalikan array kosong
+ *  - `Accept: …/vnd.pgrst.object`   → kembalikan objek tunggal (single/maybeSingle)
+ *
+ * Tanpa ini, `.update().select().maybeSingle()` selalu menerima null dan
+ * kode produksi mengira "data tidak ditemukan" padahal barisnya sudah berubah.
+ */
+function respondMutation(req, res, rows, select) {
+  const accept = req.headers.accept ?? ''
+  if (accept.includes('application/vnd.pgrst.object')) {
+    if (rows.length === 0) {
+      return json(res, 406, { code: 'PGRST116', message: 'JSON object requested, multiple (or no) rows returned' })
+    }
+    if (rows.length > 1) {
+      return json(res, 406, { code: 'PGRST116', message: 'JSON object requested, multiple (or no) rows returned' })
+    }
+    return json(res, 200, project(rows[0], select))
+  }
+
+  const prefer = req.headers.prefer ?? ''
+  if (!prefer.includes('return=representation')) return json(res, 200, [])
+  return json(res, 200, rows.map((r) => project(r, select)))
+}
+
 const applyOp = (value, expr) => {
   const m = /^(eq|neq|gt|gte|lt|lte)\.(.*)$/.exec(expr)
   if (m) {
@@ -315,23 +348,37 @@ const applyOp = (value, expr) => {
       const select = url.searchParams.get('select')
       if (req.method === 'GET') {
         if (!select) return json(res, 200, rows.length)
-        const cols = select.split(',').map((s) => s.trim())
-        return json(
-          res,
-          200,
-          rows.map((u) => {
-            const out = {}
-            for (const c of cols) if (c in u) out[c] = u[c]
-            return out
-          }),
-        )
+        return json(res, 200, rows.map((u) => project(u, select)))
       }
+      if (req.method === 'POST') {
+        const patch = await readBody()
+        const email = String(patch.email ?? '').toLowerCase()
+        if (mockState.users.some((u) => u.email.toLowerCase() === email)) {
+          return json(res, 409, {
+            code: '23505',
+            message: `duplicate key value violates unique constraint "users_email_key"`,
+            detail: `Key (email)=(${email}) already exists.`,
+          })
+        }
+        const created = {
+          id: newUuid(),
+          last_login_at: null,
+          is_active: true,
+          is_password_temporary: false,
+          display_name: null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          ...patch,
+        }
+        mockState.users.push(created)
+        return respondMutation(req, res, [created], select)
+      }
+
       if (req.method === 'PATCH') {
         const patch = await readBody()
-        const target = rows[0]
-        if (!target) return json(res, 200, [])
-        Object.assign(target, patch)
-        return json(res, 200, [target])
+        const targets = rows
+        for (const t of targets) Object.assign(t, patch)
+        return respondMutation(req, res, targets, select)
       }
     }
 
@@ -408,13 +455,52 @@ const applyOp = (value, expr) => {
       if (isActive !== null && isActive !== undefined) {
         rows = rows.filter((c) => c.is_active === (isActive === 'true'))
       }
+
+      const readBody = async () => {
+        let raw = ''
+        for await (const chunk of req) raw += chunk
+        try {
+          return JSON.parse(raw || '{}')
+        } catch {
+          return {}
+        }
+      }
+
+      if (req.method === 'POST' || req.method === 'PATCH') {
+        const patch = await readBody()
+        const unknown = Object.keys(patch).filter(
+          (k) => !['id', 'name', 'color', 'code', 'sort_order', 'is_active', 'created_at', 'updated_at'].includes(k),
+        )
+        if (unknown.length) {
+          return json(res, 400, {
+            code: 'PGRST204',
+            message: `Could not find the '${unknown[0]}' column of 'categories' in the schema cache`,
+          })
+        }
+
+        if (req.method === 'POST') {
+          const created = {
+            id: newUuid(),
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            is_active: true,
+            code: null,
+            ...patch,
+          }
+          mockState.categories.push(created)
+          return respondMutation(req, res, [created], select)
+        }
+
+        const id = url.searchParams.get('id')?.replace(/^eq\./, '')
+        const targets = mockState.categories.filter((c) => !id || c.id === id)
+        for (const c of targets) {
+          Object.assign(c, patch, { updated_at: new Date().toISOString() })
+        }
+        return respondMutation(req, res, targets, select)
+      }
+
       if (!select) return json(res, 200, rows.length)
-      const cols = select.split(',').map((s) => s.trim())
-      return json(
-        res,
-        200,
-        rows.map((c) => Object.fromEntries(cols.filter((k) => k in c).map((k) => [k, c[k]]))),
-      )
+      return json(res, 200, rows.map((c) => project(c, select)))
     }
 
     if (table === 'queue_entries') {
@@ -499,26 +585,14 @@ const applyOp = (value, expr) => {
         if (Number.isFinite(n) && n > 0) rows = rows.slice(0, n)
       }
 
-      const project = (row, select) => {
-        // `select=*` berarti semua kolom — bentuk yang sama seperti tanpa
-        // parameter select sama sekali.
-        if (!select || select === '*') return { ...row }
-        const cols = select.split(',').map((s) => s.trim())
-        return Object.fromEntries(cols.filter((k) => k in row).map((k) => [k, row[k]]))
-      }
-
       const applySelect = (list) => {
         const select = url.searchParams.get('select')
         if (!select) return list
         return list.map((r) => project(r, select))
       }
 
-      // `.maybeSingle()` / `.single()` di supabase-js memakai Accept header ini;
-      // PostgREST lalu mengembalikan objek tunggal, bukan array. Kalau mock
-      // selalu mengirim array, pemanggil akan selalu menerima null.
-      const wantsSingleObject = (req.headers.accept ?? '').includes(
-        'application/vnd.pgrst.object',
-      )
+      // `.maybeSingle()` / `.single()` di supabase-js memakai Accept header
+      // ini; PostgREST lalu mengembalikan objek tunggal, bukan array.
 
       if (req.method === 'PATCH' || req.method === 'POST') {
         let raw = ''
@@ -554,25 +628,14 @@ const applyOp = (value, expr) => {
         }
 
         for (const row of rows) Object.assign(row, patch, { updated_at: new Date().toISOString() })
-        const projected = rows.map((r) => project(r, url.searchParams.get('select')))
-        if (wantsSingleObject) {
-          if (projected.length === 0) return json(res, 406, { code: 'PGRST116', message: 'no rows' })
-          if (projected.length > 1) {
-            return json(res, 406, {
-              code: 'PGRST116',
-              message: 'JSON object requested, multiple (or no) rows returned',
-            })
-          }
-          return json(res, 200, projected[0])
-        }
-        return json(res, 200, projected)
+        return respondMutation(req, res, rows, url.searchParams.get('select'))
       }
 
       if (!url.searchParams.get('select')) return json(res, 200, rows.length)
-      const projectedRows = applySelect(rows)
-      if (wantsSingleObject) {
-        if (projectedRows.length === 0) return json(res, 406, { code: 'PGRST116', message: 'no rows' })
-        if (projectedRows.length > 1) {
+      const projectedRows = rows.map((r) => project(r, url.searchParams.get('select')))
+      const accept = req.headers.accept ?? ''
+      if (accept.includes('application/vnd.pgrst.object')) {
+        if (projectedRows.length !== 1) {
           return json(res, 406, {
             code: 'PGRST116',
             message: 'JSON object requested, multiple (or no) rows returned',

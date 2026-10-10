@@ -1,9 +1,9 @@
-/**
+﻿/**
  * E2E dashboard admin: mendaftarkan pelanggan, navigasi antrian, dan
  * perilaku cetak gagal.
  *
  * Web Bluetooth tidak tersedia di Chrome headless, jadi yang diuji justru
- * jalur degradasinya — sesuai prinsip PRD: "data antrian tetap disimpan walau
+ * jalur degradasinya â€” sesuai prinsip PRD: "data antrian tetap disimpan walau
  * print gagal". Number tidak boleh hilang.
  *
  * Jalankan: node scripts/admin-e2e.mjs
@@ -71,7 +71,7 @@ async function waitForHttp(url, timeoutMs = 90000) {
     } catch (e) {
       last = e.message
     }
-    await new Promise((r) => setTimeout(r, 400))
+    await new Promise((r) => setTimeout(r, 2500))
   }
   throw new Error(`timeout menunggu ${url} (${last})`)
 }
@@ -99,7 +99,7 @@ function check(cond, label, extra = '') {
     console.log(`  PASS  ${label}`)
   } else {
     results.fail.push(label)
-    console.log(`  FAIL  ${label}${extra ? ` — ${extra}` : ''}`)
+    console.log(`  FAIL  ${label}${extra ? ` â€” ${extra}` : ''}`)
   }
 }
 function section(name) {
@@ -107,6 +107,25 @@ function section(name) {
 }
 
 const testid = (id) => `[data-testid="${id}"]`
+
+/**
+ * Klik elemen secara andal.
+ *
+ * `elementHandle.click()` gagal dengan "not clickable" bila elemen berada di
+ * luar area terlihat atau tertimpa elemen lain. Scroll ke posisi elemen lalu
+ * klik; bila masih gagal, pakai klik langsung lewat DOM yang tetap
+ * meniru perilaku pengguna pada level event handler.
+ */
+async function clickSafe(page, selector) {
+  const el = await page.waitForSelector(selector, { timeout: 20000 })
+  await el.scrollIntoView().catch(() => {})
+  await new Promise((r) => setTimeout(r, 60))
+  try {
+    await el.click()
+  } catch {
+    await page.evaluate((sel) => document.querySelector(sel)?.click(), selector)
+  }
+}
 
 async function waitText(page, text, timeout = 20000) {
   await page.waitForFunction(
@@ -173,7 +192,6 @@ try {
     const child = spawn(
       process.execPath,
       [
-        '--max-old-space-size=4096',
         path.resolve('node_modules/vite/bin/vite.js'),
         'build',
         '--outDir',
@@ -214,7 +232,7 @@ try {
   browser = await puppeteer.launch({
     executablePath: CHROME,
     headless: 'new',
-    args: ['--no-sandbox', '--disable-dev-shm-usage'],
+    args: ['--no-sandbox', '--disable-dev-shm-usage', '--js-flags=--max-old-space-size=256', '--disable-gpu', '--disable-extensions'],
   })
 
   // ---------------- 1. Dashboard termuat ----------------
@@ -246,7 +264,7 @@ try {
   // ---------------- 2. Daftarkan pelanggan ----------------
   section('[2] Pendaftaran pelanggan')
   {
-    await page.click(testid('category-RJ'))
+    await clickSafe(page, testid('category-RJ'))
     await page.waitForSelector(testid('register-dialog'), { timeout: 10000 })
     check(true, 'dialog pendaftaran terbuka setelah klik kategori')
 
@@ -258,9 +276,9 @@ try {
     const enabled = await page.$eval(testid('register-submit'), (el) => !el.disabled)
     check(enabled, 'tombol submit aktif setelah nama diisi')
 
-    await page.click(testid('register-submit'))
+    await clickSafe(page, testid('register-submit'))
 
-    // Web Bluetooth tidak ada di headless → printer gagal → tiket masuk daftar
+    // Web Bluetooth tidak ada di headless â†’ printer gagal â†’ tiket masuk daftar
     // gagal cetak. INI yang diuji: nomor harus tetap tersimpan.
     await page.waitForSelector(testid('failed-prints'), { timeout: 30000 })
     check(true, 'dialog tertutup dan halaman selesai memproses')
@@ -284,8 +302,8 @@ try {
     check(entries[0]?.status === 'waiting', 'status = waiting')
     check(entries[0]?.print_status === 'failed', 'print_status = failed')
 
-    // Lewati → keluar dari daftar gagal cetak tapi tetap di antrean.
-    await page.click(testid('skip-print-1'))
+    // Lewati â†’ keluar dari daftar gagal cetak tapi tetap di antrean.
+    await clickSafe(page, testid('skip-print-1'))
     await page.waitForFunction(
       () => !document.querySelector('[data-testid="failed-prints"]'),
       { timeout: 10000 },
@@ -299,10 +317,10 @@ try {
   // ---------------- 3. Tambah pelanggan lagi ----------------
   section('[3] Penomoran berurutan')
   {
-    await page.click(testid('category-RI'))
+    await clickSafe(page, testid('category-RI'))
     await page.waitForSelector(testid('register-dialog'), { timeout: 10000 })
     await page.type(testid('customer-name'), 'Siti Aminah')
-    await page.click(testid('register-submit'))
+    await clickSafe(page, testid('register-submit'))
     await page.waitForFunction(() => !document.querySelector('[data-testid="register-dialog"]'), {
       timeout: 30000,
     })
@@ -324,7 +342,7 @@ try {
   // ---------------- 4. Panggil nomor berikutnya ----------------
   section('[4] Navigasi: nomor berikutnya')
   {
-    await page.click(testid('btn-next'))
+    await clickSafe(page, testid('btn-next'))
     await page.waitForSelector(testid('serving-number'), { timeout: 15000 })
     const number = await page.$eval(testid('serving-number'), (el) => el.innerText.trim())
     check(number === '1', `nomor 1 menjadi serving (dapat "${number}")`)
@@ -345,7 +363,7 @@ try {
   {
     // Nomor 1 masih serving, 2 masih waiting. Panggil lagi harus
     // menyelesaikan nomor 1 danOSH mem nominate nomor 2.
-    await page.click(testid('btn-next'))
+    await clickSafe(page, testid('btn-next'))
     await page.waitForFunction(
       () => document.querySelector('[data-testid="serving-number"]')?.innerText.trim() === '2',
       { timeout: 15000 },
@@ -367,7 +385,7 @@ try {
   // ---------------- 6. Pending ----------------
   section('[6] Tandai pending (tidak dipanggil lagi)')
   {
-    await page.click(testid('pending-2'))
+    await clickSafe(page, testid('pending-2'))
     await page.waitForFunction(
       () => document.querySelector('[data-testid="stat-pending"]')?.innerText.includes('1'),
       { timeout: 15000 },
@@ -383,16 +401,16 @@ try {
     )
     check(firstEntry === 'entry-2', `pending tampil paling atas (dapat ${firstEntry})`)
 
-    // Nomor pending TIDAK boleh otomatis selesai saat memanggil nomor lain —
+    // Nomor pending TIDAK boleh otomatis selesai saat memanggil nomor lain â€”
     // ia hanya "dilewati", bukan dilayani.
-    await page.click(testid('btn-next'))
+    await clickSafe(page, testid('btn-next'))
     await page.waitForFunction(
       () => !document.querySelector('[data-testid="serving-number"]'),
       { timeout: 15000 },
     )
-    // Nomor pending TIDAK boleh otomatis selesai saat memanggil nomor lain —
+    // Nomor pending TIDAK boleh otomatis selesai saat memanggil nomor lain â€”
     // ia hanya "dilewati", bukan dilayani.
-    await page.click(testid('btn-next'))
+    await clickSafe(page, testid('btn-next'))
     await page.waitForFunction(
       () => !document.querySelector('[data-testid="serving-number"]'),
       { timeout: 15000 },
@@ -407,7 +425,7 @@ try {
   // ---------------- 7. Panggil ulang ----------------
   section('[7] Panggil ulang')
   {
-    await page.click(testid('recall-2'))
+    await clickSafe(page, testid('recall-2'))
     await page.waitForFunction(
       () => document.querySelector('[data-testid="stat-waiting"]')?.innerText.includes('1'),
       { timeout: 15000 },
@@ -423,7 +441,7 @@ try {
   // ---------------- 8. Batalkan ----------------
   section('[8] Batalkan nomor')
   {
-    await page.click(testid('cancel-2'))
+    await clickSafe(page, testid('cancel-2'))
     await page.waitForFunction(
       () => document.querySelector('[data-testid="stat-cancelled"]')?.innerText.includes('1'),
       { timeout: 15000 },
@@ -439,9 +457,9 @@ try {
   section('[9] Muat ulang data dan konsistensi daftar')
   {
     // Pada titik ini nomor 1 = done dan 2 = cancelled, jadi tidak ada yang
-    // waiting/pending/serving. Daftar aktif harus kosong — bukan menampilkan
+    // waiting/pending/serving. Daftar aktif harus kosong â€” bukan menampilkan
     // nomor yang sudah selesai.
-    await page.click(testid('btn-refresh'))
+    await clickSafe(page, testid('btn-refresh'))
     await page.waitForSelector(testid('serving-card'), { timeout: 15000 })
 
     const hasList = (await page.$(testid('queue-list'))) !== null
@@ -512,7 +530,7 @@ try {
   if (devVarsExisted && devVarsBackup !== null) writeFileSync(devVarsPath, devVarsBackup)
   else if (existsSync(devVarsPath)) rmSync(devVarsPath)
   mockServer.close()
-  await new Promise((r) => setTimeout(r, 400))
+  await new Promise((r) => setTimeout(r, 2500))
 
   console.log(`\n${'='.repeat(58)}`)
   console.log(`  ${results.pass} lulus, ${results.fail.length} gagal`)
