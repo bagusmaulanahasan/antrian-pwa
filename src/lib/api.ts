@@ -41,14 +41,19 @@ export function isApiConfigured(): boolean {
   return apiBaseUrl().length > 0
 }
 
-export function isApiUnavailable(): boolean {
-  return !isApiConfigured()
+export interface ApiBase {
+  method?: string
+  body?: unknown
+  signal?: AbortSignal
 }
 
-async function request<T>(
-  path: string,
-  options: { method?: string; body?: unknown; signal?: AbortSignal } = {},
-): Promise<T> {
+/**
+ * Kirim request ke Worker.
+ *
+ * Semua token berada di cookie HttpOnly, jadi `credentials: 'include'` wajib
+ * dan tidak ada bearer token yang tersimpan di sisi browser.
+ */
+export async function apiRequest<T>(path: string, options: ApiBase = {}): Promise<T> {
   const base = apiBaseUrl()
   if (!base) {
     throw new ApiError(
@@ -106,19 +111,23 @@ export interface LoginResponse {
 }
 
 export function login(email: string, password: string, signal?: AbortSignal) {
-  return request<LoginResponse>('/api/auth/login', { method: 'POST', body: { email, password }, signal })
+  return apiRequest<LoginResponse>('/api/auth/login', {
+    method: 'POST',
+    body: { email, password },
+    signal,
+  })
 }
 
 export function refreshSession(signal?: AbortSignal) {
-  return request<LoginResponse>('/api/auth/refresh', { method: 'POST', signal })
+  return apiRequest<LoginResponse>('/api/auth/refresh', { method: 'POST', signal })
 }
 
 export function logout(signal?: AbortSignal) {
-  return request<{ ok: boolean }>('/api/auth/logout', { method: 'POST', signal })
+  return apiRequest<{ ok: boolean }>('/api/auth/logout', { method: 'POST', signal })
 }
 
 export function me(signal?: AbortSignal) {
-  return request<{ user: AuthUser }>('/api/auth/me', { signal })
+  return apiRequest<{ user: AuthUser }>('/api/auth/me', { signal })
 }
 
 export function changePassword(
@@ -126,7 +135,7 @@ export function changePassword(
   newPassword: string,
   signal?: AbortSignal,
 ) {
-  return request<LoginResponse>('/api/auth/change-password', {
+  return apiRequest<LoginResponse>('/api/auth/change-password', {
     method: 'POST',
     body: { currentPassword, newPassword },
     signal,
@@ -134,5 +143,7 @@ export function changePassword(
 }
 
 export function health(signal?: AbortSignal) {
-  return request<{ status: string; database?: string; time?: string }>('/api/health', { signal })
+  return apiRequest<{ status: string; database?: string; time?: string }>('/api/health', {
+    signal,
+  })
 }

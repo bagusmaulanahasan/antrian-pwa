@@ -37,13 +37,37 @@ Status: ⬜ belum · 🟨 dikerjakan · ✅ selesai (lolos verifikasi) · ⚠️
 
 - ✅ **T10** Backend API antrian + dashboard admin
       → Worker `/api/queue/*`, 58 integration test
-- ⬜ **T10b** UI: card kategori + input nama + daftar antrian
-- ⬜ **T11** Cetak tiket Bluetooth ESC/POS + fallback cetak ulang
-- ⬜ **T12** Navigasi antrian: next / pending / selesai / panggil ulang / batalkan
+- ✅ **T10b** UI: card kategori, dialog pendaftaran, daftar antrian, statistik
+      → 50 E2E (workerd + Chrome headless)
+- ✅ **T11** Cetak tiket Bluetooth ESC/POS + fallback cetak ulang
+      → generator byte ESC/POS + lapisan Web Bluetooth, 28 unit test
+- ✅ **T12** Navigasi antrian: next / pending / selesai / panggil ulang / batalkan
+      → terverifikasi end-to-end di browser
 
 ## Dashboard TV
 
 - ⬜ **T13** Dashboard TV: realtime + PIN + pengumuman suara
+
+## Catatan T11 — printer thermal
+
+Printer thermal punya beberapa dialek. Mode `compatible` (default) mengirim
+`{ESC}/` di awal baris supaya printer resmi Epson tahu posisi awal baris —
+tanpa itu beberapa printer menggeser seluruh teks ke kanan. Ukuran font harus
+dikembalikan ke normal (`GS ! 0`) **sebelum** potong kertas, kalau tidak
+printer akan memotong dengan ketebalan yang salah.
+
+Byte ditulis per chunk 180 (di bawah MTU characteristic GATT ~512). Menulis
+seluruh tiket sekaligus sering gagal di sebagian printer.
+
+Web Bluetooth hanya tersedia di Chrome/Edge, hanya di Android/ChromeOS/Desktop,
+dan hanya dalam konteks secure (HTTPS atau localhost). Safari dan Firefox belum
+mendukungnya — pesan error menjelaskan ini ke pengguna, bukan diam-diam gagal.
+
+**Yang TIDAK bisa diuji otomatis:** selecting perangkat nyata dan Cetak Ulang
+karena `requestDevice()` hanya boleh dipanggil dari gestur pengguna dan
+memerlukan perangkat Bluetooth sungguhan. Yang terverifikasi adalah jalur
+degradasinya: ketika printer tidak tersedia, nomor antrian **tetap tersimpan**
+dan ditandai `print_status = 'failed'` dengan tombol Cetak Ulang / Lewati.
 
 ## Database
 

@@ -44,10 +44,23 @@ export interface SettingRow {
 }
 
 /** Tanggal antrian aktif (WIB), mengikuti jam reset harian. */
-export function getQueueDate(resetHour = 0, now = new Date()): string {
-  const wibOffsetMs = 7 * 60 * 60 * 1000
-  const wib = new Date(now.getTime() + wibOffsetMs)
-  if (resetHour > 0 && wib.getUTCHours() < resetHour) {
+/**
+ * Tanggal antrian aktif (WIB).
+ *
+ * `now` boleh berupa Date atau string ISO — parameter `now` pada test
+ * multibahasa perlu deterministik.
+ */
+export function getQueueDate(resetHour = 0, now: Date | string = new Date()): string {
+  // Reset jam di luar 0..23 berarti data rusak. Tanpa clamp di sini, nilai
+  // seperti 99 akan membuat perbandingan `jam < 99` selalu benar dan
+  // antrian tampak bergeser satu hari, tanpa error apa pun.
+  const hour =
+    Number.isFinite(resetHour) && resetHour >= 0 && resetHour <= 23 ? Math.floor(resetHour) : 0
+
+  const base = typeof now === 'string' ? new Date(now) : now
+  const wib = new Date(base.getTime() + 7 * 60 * 60 * 1000)
+
+  if (hour > 0 && wib.getUTCHours() < hour) {
     wib.setUTCDate(wib.getUTCDate() - 1)
   }
   return wib.toISOString().slice(0, 10)

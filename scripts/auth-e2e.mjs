@@ -91,6 +91,20 @@ mockPg = http.createServer(async (req, res) => {
     resetState()
     return json(res, 200, { ok: true })
   }
+
+  // Halaman yang dirender (AdminDashboardView) memanggil endpoint antrian
+  // sesaat setelah mount. Mock di sini sengaja fokus pada alur auth, jadi
+  // kategori & antrian dikembalikan kosong — bukan 500, supaya test auth tidak
+  // gagal karena endpoint yang memang tidak diuji.
+  if (path === '/rest/v1/categories') {
+    return json(res, 200, [])
+  }
+  if (path === '/rest/v1/queue_entries') {
+    return json(res, 200, [])
+  }
+  if (path === '/rest/v1/settings') {
+    return json(res, 200, [{ key: 'reset_hour', value: 0 }])
+  }
   if (path.startsWith('/rest/v1/rpc/')) {
     let raw = ''
     for await (const chunk of req) raw += chunk
@@ -269,7 +283,22 @@ async function getPage() {
   await client.send('Network.clearBrowserCookies')
   page.on('pageerror', (e) => consoleErrors.push(`pageerror: ${e.message}`))
   page.on('console', (m) => {
-    if (m.type() === 'error' && !m.text().includes('favicon')) consoleErrors.push(m.text())
+    if (m.type() !== 'error') return
+    const text = m.text()
+    if (text.includes('favicon')) return
+    // Sertakan URL agar 500 yang lolos tidak datang tanpa konteks.
+    const location = m.location?.()?.url
+    consoleErrors.push(location ? `${text} <- ${location}` : text)
+  })
+  page.on('requestfailed', (req) => {
+    const f = req.failure()
+    consoleErrors.push(`requestfailed: ${req.url()} (${f?.errorText})`)
+  })
+  page.on('response', async (res) => {
+    if (res.status() >= 500) {
+      const body = await res.text().catch(() => '')
+      consoleErrors.push(`HTTP ${res.status()} ${res.url()} :: ${body.slice(0, 200)}`)
+    }
   })
   return page
 }
@@ -358,10 +387,14 @@ try {
   // 3. Build frontend dengan VITE_API_BASE_URL â†’ worker
   const OUT_DIR = 'dist-e2e'
   console.log('\n[build] frontend dengan VITE_API_BASE_URL=' + BASE)
+  // Batasi heap: `vite build` + workbox (generateSW) Borongan bisa melebihi
+  // batas default Node dan membuat test gagal dengan OOM yang tidak terkait
+  // dengan kode.
   const buildCode = await new Promise((resolve) => {
     const child = spawn(
       process.execPath,
       [
+        '--max-old-space-size=4096',
         path.resolve('node_modules/vite/bin/vite.js'),
         'build',
         '--outDir',
