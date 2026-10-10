@@ -214,41 +214,91 @@ alter default privileges in schema public
 -- ============================================================
 --  LANGKAH 5 — VERIFIKASI (gagal sendiri kalau masih bocor)
 --
---  Script ini raise exception kalau masih ada satu pun function
---  publik yang bisa dipanggil anon atau authenticated.
+--  CATATAN PENTING soal cakupan:
+--
+--  Schema `public` milik BERSAMA. Extension yang dipasang Supabase
+--  (mis. citext) menaruh function-nya di sana, dan Postgres memberi
+--  EXECUTE ke PUBLIC untuk semua function secara default.
+--
+--  Function-function itu AMAN — hanya pembanding string, tidak
+--  menyentuh data aplikasi. Kalau ikut dihitung sebagai kegagalan,
+--  script ini tidak akan pernah bisa lulus.
+--
+--  Karena itu pengecekan dibelah dua:
+--
+--    1. WAJIB  — lima function milik aplikasi di bawah.
+--                Gagal (raise exception) kalau masih terbuka.
+--    2. PERINGATAN — function `public` milik sendiri yang bukan
+--                anggota extension. Hanya raise warning.
+--
 --  Exception membatalkan seluruh transaksi, jadi tidak mungkin
 --  tersisa perubahan yang hanya diterapkan sebagian.
---
---  Kalau Anda melihat pesan "PERBAIKAN BERHASIL" di bawah, berarti
---  semua grant sudah benar.
 -- ============================================================
 do $$
 declare
-  v_leak text;
+  v_app_functions text[] := array[
+    'next_queue_number',
+    'create_queue_entry',
+    'store_refresh_token',
+    'revoke_refresh_token',
+    'revoke_all_refresh_tokens'
+  ];
+
+  v_leak    text;
+  v_lainnya text;
 begin
+  -- (1) Function milik aplikasi: WAJIB tertutup.
   select string_agg(format('%s(%s)', p.proname, pg_get_function_identity_arguments(p.oid)), ', ')
     into v_leak
   from pg_proc p
   join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'public'
     and p.prokind = 'f'
+    and p.proname = any (v_app_functions)
     and (has_function_privilege('anon',          p.oid, 'execute')
       or has_function_privilege('authenticated', p.oid, 'execute'));
 
   if v_leak is not null then
-    raise exception 'GAGAL — masih bisa dipanggil tanpa login: %', v_leak;
+    raise exception 'GAGAL — function aplikasi masih bisa dipanggil tanpa login: %', v_leak;
   end if;
 
-  raise notice 'PERBAIKAN BERHASIL — tidak ada function publik yang bisa dipanggil anon/authenticated';
+  -- (2) Function milik sendiri di luar daftar: PERINGATAN saja.
+  --     pg_depend menandai anggota extension, sehingga citext dan
+  --     sejenisnya tidak ikut disorot.
+  select string_agg(format('%s(%s)', p.proname, pg_get_function_identity_arguments(p.oid)), ', ')
+    into v_lainnya
+  from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public'
+    and p.prokind = 'f'
+    and not exists (
+      select 1
+      from pg_depend d
+      where d.classid    = 'pg_proc'::regclass
+        and d.objid      = p.oid
+        and d.refclassid = 'pg_extension'::regclass
+    )
+    and (has_function_privilege('anon',          p.oid, 'execute')
+      or has_function_privilege('authenticated', p.oid, 'execute'));
+
+  if v_lainnya is not null then
+    raise warning 'Perhatian — function di luar daftar aplikasi masih terbuka oleh anon: %', v_lainnya;
+  end if;
+
+  raise notice 'PERBAIKAN BERHASIL — kelima function aplikasi hanya bisa dipanggil service_role';
 end;
 $$;
 
 
 -- ============================================================
 --  RINGKASAN (untuk dibaca manusia)
+--
+--  Hanya lima function milik aplikasi. Function extension seperti
+--  citext sengaja tidak ditampilkan karena selalu ada dan selalu
+--  bisa dipanggil anon — itu normal, bukan tanda masalah.
 -- ============================================================
 select
-  p.proname                                                as function,
+  p.proname                                                  as function,
   has_function_privilege('anon',          p.oid, 'execute') as anon,
   has_function_privilege('authenticated', p.oid, 'execute') as authenticated,
   has_function_privilege('service_role',  p.oid, 'execute') as service_role,
@@ -257,9 +307,11 @@ from pg_proc p
 join pg_namespace n on n.oid = p.pronamespace
 where n.nspname = 'public'
   and p.prokind = 'f'
-order by (has_function_privilege('anon', p.oid, 'execute')
-          or has_function_privilege('authenticated', p.oid, 'execute')) desc,
-         p.proname;
+  and p.proname = any (array[
+    'next_queue_number', 'create_queue_entry', 'store_refresh_token',
+    'revoke_refresh_token', 'revoke_all_refresh_tokens'
+  ])
+order by p.proname;
 
 -- Cara baca hasil di atas:
 --

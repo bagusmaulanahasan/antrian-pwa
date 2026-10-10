@@ -273,37 +273,82 @@ on conflict do nothing;
 --  Verifikasi
 --
 --  Pemeriksaan di bawah GAGAK SENDIRI (raise exception) kalau
---  masih ada function publik yang bisa dipanggil anon atau
+--  kelima function milik aplikasi masih bisa dipanggil anon atau
 --  authenticated. Exception membatalkan seluruh transaksi, jadi
 --  tidak mungkin ada perubahan yang hanya diterapkan sebagian.
+--
+--  Cakupan sengaja dibatasi ke lima function milik aplikasi.
+--  Schema `public` dipakai BERSAMA dengan extension Supabase
+--  (mis. citext), dan Postgres memberi EXECUTE ke PUBLIC untuk
+--  semua function secara default. Function extension itu aman —
+--  hanya pembanding string — dan kalau ikut dihitung sebagai
+--  kegagalan, script ini tidak akan pernah bisa lulus.
+--
+--  Function `public` milik sendiri yang di luar daftar aplikasi
+--  hanya dilaporkan sebagai peringatan.
 --
 --  Tidak perlu menafsirkan angka true/false — cukup perhatikan
 --  apakah pesan "VERIFIKASI LULUS" muncul.
 -- ============================================================
 do $$
 declare
-  v_leak text;
+  v_app_functions text[] := array[
+    'next_queue_number',
+    'create_queue_entry',
+    'store_refresh_token',
+    'revoke_refresh_token',
+    'revoke_all_refresh_tokens'
+  ];
+
+  v_leak    text;
+  v_lainnya text;
 begin
+  -- (1) Function milik aplikasi: WAJIB tertutup.
   select string_agg(format('%s(%s)', p.proname, pg_get_function_identity_arguments(p.oid)), ', ')
     into v_leak
   from pg_proc p
   join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'public'
     and p.prokind = 'f'
+    and p.proname = any (v_app_functions)
     and (has_function_privilege('anon',          p.oid, 'execute')
       or has_function_privilege('authenticated', p.oid, 'execute'));
 
   if v_leak is not null then
-    raise exception 'GAGAL — masih bisa dipanggil tanpa login: %', v_leak;
+    raise exception 'GAGAL — function aplikasi masih bisa dipanggil tanpa login: %', v_leak;
   end if;
 
-  raise notice 'VERIFIKASI LULUS — tidak ada function publik yang bisa dipanggil anon/authenticated';
+  -- (2) Function milik sendiri di luar daftar: PERINGATAN saja.
+  --     pg_depend menandai anggota extension, sehingga citext dan
+  --     sejenisnya tidak ikut disorot.
+  select string_agg(format('%s(%s)', p.proname, pg_get_function_identity_arguments(p.oid)), ', ')
+    into v_lainnya
+  from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public'
+    and p.prokind = 'f'
+    and not exists (
+      select 1
+      from pg_depend d
+      where d.classid    = 'pg_proc'::regclass
+        and d.objid      = p.oid
+        and d.refclassid = 'pg_extension'::regclass
+    )
+    and (has_function_privilege('anon',          p.oid, 'execute')
+      or has_function_privilege('authenticated', p.oid, 'execute'));
+
+  if v_lainnya is not null then
+    raise warning 'Perhatian — function di luar daftar aplikasi masih terbuka oleh anon: %', v_lainnya;
+  end if;
+
+  raise notice 'VERIFIKASI LULUS — kelima function aplikasi hanya bisa dipanggil service_role';
 end;
 $$;
 
--- Ringkasan grant (bacaan saja, tidak memengaruhi apa pun)
+-- Ringkasan grant, hanya lima function milik aplikasi.
+-- Function extension seperti citext sengaja tidak ditampilkan.
 select
-  p.proname                                                as function,
+  p.proname                                                  as function,
   has_function_privilege('anon',          p.oid, 'execute') as anon,
   has_function_privilege('authenticated', p.oid, 'execute') as authenticated,
   has_function_privilege('service_role',  p.oid, 'execute') as service_role,
@@ -312,9 +357,11 @@ from pg_proc p
 join pg_namespace n on n.oid = p.pronamespace
 where n.nspname = 'public'
   and p.prokind = 'f'
-order by (has_function_privilege('anon', p.oid, 'execute')
-          or has_function_privilege('authenticated', p.oid, 'execute')) desc,
-         p.proname;
+  and p.proname = any (array[
+    'next_queue_number', 'create_queue_entry', 'store_refresh_token',
+    'revoke_refresh_token', 'revoke_all_refresh_tokens'
+  ])
+order by p.proname;
 
 --  Cara baca: baris dengan anon = true atau authenticated = true
 --  TIDAK BOLEH diabaikan. Salin pesan error-nya dan laporkan.

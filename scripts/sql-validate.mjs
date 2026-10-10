@@ -19,6 +19,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 
 const FILES = [
   'schema.sql',
+  'supabase/00_check_grants.sql',
   'supabase/02_seed_and_fixes.sql',
   'supabase/03_fix_privileges.sql',
 ]

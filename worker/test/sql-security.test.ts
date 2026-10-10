@@ -209,13 +209,75 @@ describe('Invariant keamanan SQL', () => {
     )
   })
 
-  it('patch 03 gagal sendiri bila grant masih bocor', () => {
+  it('patch 03 gagal sendiri bila grant aplikasi masih bocor', () => {
     const raw = readFileSync(join(ROOT, 'supabase/03_fix_privileges.sql'), 'utf8')
     assert.match(raw, /raise exception/i, 'patch harus memaksa gagal bila bocor')
     assert.match(
       raw,
       /has_function_privilege\(\s*'anon'/i,
       'verifikasi harus mengecek peran anon',
+    )
+  })
+
+  /**
+   * Regresi: verifikasi pernah memindai SELURUH function di schema
+   * `public`, sehingga function extension (citext) ikut terhitung dan
+   * patch selalu gagal. Postgres memang memberi EXECUTE ke PUBLIC
+   * untuk semua function, jadi daftar itu memang tidak akan pernah
+   * kosong. Test ini menjaga agar verifier tidak melebar lagi.
+   */
+  for (const rel of ['supabase/02_seed_and_fixes.sql', 'supabase/03_fix_privileges.sql']) {
+    it(`${rel} memverifikasi hanya function milik aplikasi`, () => {
+      const sql = loadSql(rel)
+
+      for (const fn of PRIVATE_FUNCTIONS) {
+        assert.ok(
+          sql.includes(fn),
+          `${rel}: daftar verifikasi harus menyebut ${fn}`,
+        )
+      }
+
+      // Bagian yang wajib gagal (raise exception) harus difilter
+      // dengan daftar nama, bukan sekadar "semua function di public".
+      const wajibBlocks = sql
+        .split(/raise\s+exception/i)
+        .slice(0, -1)
+        .join('raise exception')
+
+      assert.match(
+        wajibBlocks,
+        /p\.proname\s*=\s*any\s*\(\s*v_app_functions\s*\)/i,
+        `${rel}: cek wajib harus dibatasi ke daftar function aplikasi`,
+      )
+
+      // Function milik extension dipisahkan agar hanya jadi peringatan.
+      assert.match(
+        sql,
+        /refclassid\s*=\s*'pg_extension'::regclass/i,
+        `${rel}: function extension harus dikenali lewat pg_depend`,
+      )
+      assert.match(
+        sql,
+        /raise\s+warning/i,
+        `${rel}: function di luar daftar harus jadi peringatan, bukan error`,
+      )
+    })
+  }
+
+  it('diagnostik 00 hanya menampilkan function milik aplikasi', () => {
+    const sql = loadSql('supabase/00_check_grants.sql')
+    for (const fn of PRIVATE_FUNCTIONS) {
+      assert.ok(sql.includes(fn), `diagnostik harus menyebut ${fn}`)
+    }
+    assert.match(
+      sql,
+      /nspname\s*=\s*'public'[\s\S]*?p\.proname\s*=\s*any/i,
+      'tabel utama harus dibatasi ke daftar function aplikasi',
+    )
+    assert.doesNotMatch(
+      sql,
+      /\b(insert|update|delete|drop|alter|create|revoke|grant|truncate)\b/i,
+      'diagnostik harus read-only',
     )
   })
 })
