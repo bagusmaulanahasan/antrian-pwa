@@ -34,7 +34,8 @@ export class ApiError extends Error {
 /** Base URL Worker. Kosong bila belum di-deploy — pemanggil cek lebih dulu. */
 export function apiBaseUrl(): string {
   const raw = typeof __API_BASE_URL__ === 'string' ? __API_BASE_URL__.trim() : ''
-  return raw.replace(/\/+$/, '')
+  // Buang trailing slash dan trailing /api agar tidak terjadi double /api/api
+  return raw.replace(/\/+$/, '').replace(/\/api$/, '')
 }
 
 export function isApiConfigured(): boolean {

@@ -423,7 +423,7 @@ export async function runConnectionDiagnostics(): Promise<DiagnosticReport> {
       ),
     )
   } else {
-    const healthUrl = `${envStatus.apiBaseUrl.replace(/\/+$/, '')}/api/health`
+    const healthUrl = `${envStatus.apiBaseUrl.replace(/\/+$/, '').replace(/\/api$/, '')}/api/health`
     try {
       const res = await fetch(healthUrl)
       results.push(
