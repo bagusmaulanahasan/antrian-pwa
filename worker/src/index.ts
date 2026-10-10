@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Worker API untuk Sistem Antrian.
  *
  * Tanggung jawab:
@@ -15,8 +15,8 @@
  */
 import {
   buildCookie,
-  errorResponse,
-  json,
+  errorResponseFor,
+  jsonFor,
   preflight,
   readJson,
   withErrorHandling,
@@ -84,12 +84,12 @@ async function issueSession(
   })
   if (error) {
     console.error('[worker] gagal menyimpan refresh token:', error.message)
-    return errorResponse('Gagal membuat sesi. Coba lagi.', 500)
+    return errorResponseFor(request, env)('Gagal membuat sesi. Coba lagi.', 500)
   }
 
   // Both token disimpan sebagai cookie HttpOnly agar frontend tidak pernah
   // menyentuhnya lewat JavaScript (mitigasi XSS).
-  return json(
+  return jsonFor(request, env)(
     {
       user: {
         id: user.id,
@@ -114,29 +114,58 @@ function sessionCookies(accessToken: string, refreshToken: string): string[] {
   ]
 }
 
+/**
+ * Baca access token dari Authorization header, lalu cookie HttpOnly.
+ *
+ * Browser tidak bisa membaca cookie HttpOnly dari JavaScript, jadi frontend
+ * tidak pernah bisa mengirim header `Authorization`. Karena itu cookie
+ * `antrian_access` adalah jalur utama; header hanya untuk klien non-browser
+ * (curl, skrip admin, pengujian).
+ */
+function readAccessToken(request: Request): string | null {
+  const header = request.headers.get('Authorization')?.replace(/^Bearer\s+/i, '').trim()
+  if (header) return header
+
+  const raw = request.headers.get('Cookie')
+  if (!raw) return null
+  for (const part of raw.split(';')) {
+    const idx = part.indexOf('=')
+    if (idx === -1) continue
+    if (part.slice(0, idx).trim() === ACCESS_COOKIE) {
+      return decodeURIComponent(part.slice(idx + 1).trim())
+    }
+  }
+  return null
+}
+
 const handler = async (request: Request, env: Env): Promise<Response> => {
   const url = new URL(request.url)
 
-  if (request.method === 'OPTIONS') return preflight()
+  // Bayangkan ulang json/errorResponse dengan request+env yang sudah terikat,
+  // supaya seluruh call site di bawah otomatis membawa header CORS yang benar.
+  const respond = jsonFor(request, env)
+  const failWith = errorResponseFor(request, env)
+
+  if (request.method === 'OPTIONS') return preflight(request, env)
 
   if (url.pathname === '/api/health') {
     const envError = assertEnv(env)
-    if (envError) return json({ status: 'misconfigured', detail: envError }, 503)
+    if (envError) return respond({ status: 'misconfigured', detail: envError }, 503)
 
     // Verifikasi konektivitas database.
     try {
       const supabase = await createUncachedClient(env)
       const { error } = await supabase.from('users').select('id').limit(1)
       if (error) {
-        return json({ status: 'degraded', database: 'error', detail: error.message }, 503)
+        return respond({ status: 'degraded', database: 'error', detail: error.message }, 503)
       }
-      return json({
+      return respond({
         status: 'ok',
         database: 'connected',
         time: new Date().toISOString(),
       })
     } catch (err) {
-      return json(
+      return respond(
         { status: 'degraded', database: 'unreachable', detail: err instanceof Error ? err.message : 'unknown' },
         503,
       )
@@ -144,16 +173,16 @@ const handler = async (request: Request, env: Env): Promise<Response> => {
   }
 
   const envError = assertEnv(env)
-  if (envError) return errorResponse(envError, 503, 'misconfigured')
+  if (envError) return failWith(envError, 503, 'misconfigured')
 
   // ---------------- POST /api/auth/login ----------------
   if (url.pathname === '/api/auth/login' && request.method === 'POST') {
     const body = await readJson<{ email?: unknown; password?: unknown }>(request)
-    if (!body) return errorResponse('Body JSON tidak valid.', 400)
+    if (!body) return failWith('Body JSON tidak valid.', 400)
 
     const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : ''
     const password = typeof body.password === 'string' ? body.password : ''
-    if (!email || !password) return errorResponse(LOGIN_FAILED, 401)
+    if (!email || !password) return failWith(LOGIN_FAILED, 401)
 
     const supabase = await createUncachedClient(env)
     // citext membuat perbandingan email case-insensitive di database.
@@ -165,7 +194,7 @@ const handler = async (request: Request, env: Env): Promise<Response> => {
 
     if (error) {
       console.error('[worker] query users gagal:', error.message)
-      return errorResponse('Kesalahan database saat login.', 500)
+      return failWith('Kesalahan database saat login.', 500)
     }
 
     const user = data as UserRow | null
@@ -178,7 +207,7 @@ const handler = async (request: Request, env: Env): Promise<Response> => {
           password,
         )
 
-    if (!user || !valid || !user.is_active) return errorResponse(LOGIN_FAILED, 401)
+    if (!user || !valid || !user.is_active) return failWith(LOGIN_FAILED, 401)
 
     await supabase.from('users').update({ last_login_at: new Date().toISOString() }).eq('id', user.id)
     return issueSession(request, user, env)
@@ -193,12 +222,12 @@ const handler = async (request: Request, env: Env): Promise<Response> => {
       .find((s) => s.startsWith(`${REFRESH_COOKIE}=`))
       ?.slice(REFRESH_COOKIE.length + 1)
 
-    if (!refreshToken) return errorResponse('Sesi tidak ditemukan.', 401)
+    if (!refreshToken) return failWith('Sesi tidak ditemukan.', 401)
     const decoded = decodeURIComponent(refreshToken)
-    if (decoded.length !== 43) return errorResponse('Token refresh tidak valid.', 401)
+    if (decoded.length !== 43) return failWith('Token refresh tidak valid.', 401)
 
     const tokenHash = await hashRefreshToken(decoded)
-    if (tokenHash.length !== TOKEN_HASH_HEX_LENGTH) return errorResponse('Token refresh tidak valid.', 401)
+    if (tokenHash.length !== TOKEN_HASH_HEX_LENGTH) return failWith('Token refresh tidak valid.', 401)
 
     const supabase = await createUncachedClient(env)
     const { data, error } = await supabase
@@ -207,7 +236,7 @@ const handler = async (request: Request, env: Env): Promise<Response> => {
       .eq('token_hash', tokenHash)
       .maybeSingle()
 
-    if (error || !data) return errorResponse('Sesi tidak valid.', 401)
+    if (error || !data) return failWith('Sesi tidak valid.', 401)
 
     const record = data as {
       id: string
@@ -216,7 +245,7 @@ const handler = async (request: Request, env: Env): Promise<Response> => {
       revoked_at: string | null
     }
     if (record.revoked_at || new Date(record.expires_at).getTime() <= Date.now()) {
-      return errorResponse('Sesi kedaluwarsa. Silakan masuk lagi.', 401)
+      return failWith('Sesi kedaluwarsa. Silakan masuk lagi.', 401)
     }
 
     const { data: userData } = await supabase
@@ -226,7 +255,7 @@ const handler = async (request: Request, env: Env): Promise<Response> => {
       .maybeSingle()
 
     const user = userData as UserRow | null
-    if (!user || !user.is_active) return errorResponse('Akun tidak aktif.', 401)
+    if (!user || !user.is_active) return failWith('Akun tidak aktif.', 401)
 
     // Rotasi refresh token: token lama langsung dicabut.
     const newToken = generateRefreshToken()
@@ -243,8 +272,20 @@ const handler = async (request: Request, env: Env): Promise<Response> => {
     })
 
     const accessToken = await signAccessToken(userPayload(user), env.JWT_ACCESS_SECRET)
-    return json(
-      { user: { id: user.id, email: user.email, role: user.role }, expiresIn: ACCESS_TOKEN_TTL_SECONDS },
+    return respond(
+      {
+        user: {
+          id: user.id,
+          email: user.email,
+          role: user.role,
+          display_name: user.display_name,
+          // WAJIB ikut di refresh: frontend memakainya untuk mengunci
+          // seluruh route sampai password sementara diganti. Kalau hilang,
+          // sesi yang di-refresh terlihat seolah sudah aman.
+          mustChangePassword: user.is_password_temporary,
+        },
+        expiresIn: ACCESS_TOKEN_TTL_SECONDS,
+      },
       200,
       {},
       sessionCookies(accessToken, newToken),
@@ -269,19 +310,19 @@ const handler = async (request: Request, env: Env): Promise<Response> => {
         .eq('token_hash', tokenHash)
     }
 
-    return json({ ok: true }, 200, {}, [
+    return respond({ ok: true }, 200, {}, [
       buildCookie(ACCESS_COOKIE, '', { maxAge: 0 }),
       buildCookie(REFRESH_COOKIE, '', { maxAge: 0 }),
     ])
   }
 
   // ---------------- /api/auth/me ----------------
-  const bearer = request.headers.get('Authorization')?.replace(/^Bearer\s+/i, '')
+  const bearer = readAccessToken(request)
   const payload = bearer ? await verifyAccessToken(bearer, env.JWT_ACCESS_SECRET) : null
 
   if (url.pathname === '/api/auth/me' && request.method === 'GET') {
-    if (!bearer) return errorResponse('Tidak terautentikasi.', 401)
-    if (!payload) return errorResponse('Token tidak valid atau kedaluwarsa.', 401)
+    if (!bearer) return failWith('Tidak terautentikasi.', 401)
+    if (!payload) return failWith('Token tidak valid atau kedaluwarsa.', 401)
     const supabase = await createUncachedClient(env)
     const { data } = await supabase
       .from('users')
@@ -289,24 +330,24 @@ const handler = async (request: Request, env: Env): Promise<Response> => {
       .eq('id', payload.sub)
       .maybeSingle()
     const user = data as Pick<UserRow, 'id' | 'email' | 'role' | 'display_name' | 'is_password_temporary' | 'is_active'> | null
-    if (!user || !user.is_active) return errorResponse('Akun tidak aktif.', 401)
-    return json({ user: { ...user, mustChangePassword: user.is_password_temporary } })
+    if (!user || !user.is_active) return failWith('Akun tidak aktif.', 401)
+    return respond({ user: { ...user, mustChangePassword: user.is_password_temporary } })
   }
 
   // ---------------- POST /api/auth/change-password ----------------
   if (url.pathname === '/api/auth/change-password' && request.method === 'POST') {
-    if (!bearer) return errorResponse('Tidak terautentikasi.', 401)
-    if (!payload) return errorResponse('Token tidak valid atau kedaluwarsa.', 401)
+    if (!bearer) return failWith('Tidak terautentikasi.', 401)
+    if (!payload) return failWith('Token tidak valid atau kedaluwarsa.', 401)
     const payloadToken = payload
 
     const body = await readJson<{ currentPassword?: unknown; newPassword?: unknown }>(request)
-    if (!body) return errorResponse('Body JSON tidak valid.', 400)
+    if (!body) return failWith('Body JSON tidak valid.', 400)
 
     const currentPassword = typeof body.currentPassword === 'string' ? body.currentPassword : ''
     const newPassword = typeof body.newPassword === 'string' ? body.newPassword : ''
 
     if (newPassword.length < 8) {
-      return errorResponse('Password baru minimal 8 karakter.', 400)
+      return failWith('Password baru minimal 8 karakter.', 400)
     }
 
     const supabase = await createUncachedClient(env)
@@ -316,10 +357,10 @@ const handler = async (request: Request, env: Env): Promise<Response> => {
       .eq('id', payloadToken.sub)
       .maybeSingle()
     const user = data as UserRow | null
-    if (!user) return errorResponse('Akun tidak ditemukan.', 404)
+    if (!user) return failWith('Akun tidak ditemukan.', 404)
 
     if (!(await verifyPassword(user.password_hash, currentPassword))) {
-      return errorResponse('Password saat ini salah.', 401)
+      return failWith('Password saat ini salah.', 401)
     }
 
     const newHash = await hashPassword(newPassword)
@@ -327,9 +368,9 @@ const handler = async (request: Request, env: Env): Promise<Response> => {
       .from('users')
       .update({ password_hash: newHash, is_password_temporary: false, updated_at: new Date().toISOString() })
       .eq('id', user.id)
-    if (error) return errorResponse('Gagal menyimpan password baru.', 500)
+    if (error) return failWith('Gagal menyimpan password baru.', 500)
 
-    // Cabut semua sesi lama — password berubah, semua perangkat harus masuk lagi.
+    // Cabut semua sesi lama â€” password berubah, semua perangkat harus masuk lagi.
     await supabase
       .from('refresh_tokens')
       .update({ revoked_at: new Date().toISOString() })
@@ -340,7 +381,7 @@ const handler = async (request: Request, env: Env): Promise<Response> => {
     return issueSession(request, updated, env)
   }
 
-  return errorResponse('Endpoint tidak ditemukan.', 404)
+  return failWith('Endpoint tidak ditemukan.', 404)
 }
 
 export default {

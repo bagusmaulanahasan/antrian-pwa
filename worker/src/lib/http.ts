@@ -13,11 +13,38 @@ export interface Env {
   ALLOWED_ORIGIN?: string
 }
 
-const CORS_HEADERS: Record<string, string> = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET,POST,PATCH,DELETE,OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-  'Access-Control-Max-Age': '86400',
+/**
+ * CORS untuk API yang memakai cookie HttpOnly.
+ *
+ * PENTING: wildcard `*` TIDAK boleh dipakai bersama `credentials: 'include'` —
+ * browser akan menolak responsnya. Karena itu origin dibaca dari header
+ * `Origin` dan dicerminkan balik, lalu `Allow-Credentials: true` dikirim.
+ *
+ * `ALLOWED_ORIGIN` membatasi asal yang diterima (pisahkan dengan koma).
+ * Kosong = izinkan semua asal (cocok untuk penggunaan internal/WIFI'd).
+ */
+export function corsHeaders(request: Request, env: Env): Record<string, string> {
+  const origin = request.headers.get('Origin')
+  const allowed = (env.ALLOWED_ORIGIN ?? '')
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean)
+
+  const isAllowed = !allowed.length || allowed.includes('*') || (origin !== null && allowed.includes(origin))
+
+  if (!isAllowed) {
+    // Jangan(header CORS apa pun) — browser akan memblokir respons anyway.
+    return {}
+  }
+
+  return {
+    ...(origin ? { 'Access-Control-Allow-Origin': origin } : { 'Access-Control-Allow-Origin': '*' }),
+    ...(origin ? { 'Access-Control-Allow-Credentials': 'true' } : {}),
+    'Access-Control-Allow-Methods': 'GET,POST,PATCH,DELETE,OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Max-Age': '86400',
+    Vary: 'Origin',
+  }
 }
 
 const SECURITY_HEADERS: Record<string, string> = {
@@ -32,15 +59,19 @@ export function json(
   status = 200,
   extraHeaders: Record<string, string> = {},
   extraSetCookies: string[] = [],
+  request?: Request,
+  env?: Env,
 ): Response {
   const headers = new Headers({
     'Content-Type': 'application/json; charset=utf-8',
-    ...CORS_HEADERS,
     ...SECURITY_HEADERS,
     ...extraHeaders,
   })
+  if (request && env) {
+    for (const [k, v] of Object.entries(corsHeaders(request, env))) headers.set(k, v)
+  }
   // Set-Cookie harus dikirim sebagai header terpisah. Menggabungkannya dengan
-  // koma membuat browser/peramban salah mengurai Expires atau atribut lain.
+  // koma membuat browser salah mengurai sehingga cookie kedua hilang.
   for (const cookie of extraSetCookies) headers.append('Set-Cookie', cookie)
 
   return new Response(JSON.stringify(body), { status, headers })
@@ -50,8 +81,26 @@ export function errorResponse(message: string, status: number, code?: string): R
   return json({ error: message, ...(code ? { code } : {}) }, status)
 }
 
-export function preflight(): Response {
-  return new Response(null, { status: 204, headers: { ...CORS_HEADERS, ...SECURITY_HEADERS } })
+/** json/errorResponse yang sudah terikat ke request+env tertentu. */
+export function jsonFor(request: Request, env: Env) {
+  return (
+    body: unknown,
+    status = 200,
+    extraHeaders: Record<string, string> = {},
+    extraSetCookies: string[] = [],
+  ): Response => json(body, status, extraHeaders, extraSetCookies, request, env)
+}
+
+export function errorResponseFor(request: Request, env: Env) {
+  return (message: string, status: number, code?: string): Response =>
+    jsonFor(request, env)({ error: message, ...(code ? { code } : {}) }, status)
+}
+
+export function preflight(request: Request, env: Env): Response {
+  return new Response(null, {
+    status: 204,
+    headers: { ...corsHeaders(request, env), ...SECURITY_HEADERS },
+  })
 }
 
 /** Bungkus handler agar exception tidak pernah membocorkan stack trace ke klien. */

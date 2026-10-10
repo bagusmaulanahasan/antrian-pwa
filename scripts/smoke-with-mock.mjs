@@ -161,6 +161,9 @@ try {
     SMOKE_ALLOW_HTTP_STATUS: allowHttpStatus,
     // Mock tidak mendukung upgrade WebSocket realtime.
     SMOKE_ALLOW_WS_ERROR: '1',
+    // Preview menyajikan build produksi, jadi route devOnly memang diblokir
+    // dan justru itu yang diverifikasi smoke test.
+    SMOKE_EXPECT_DEV_PAGE: '0',
   })
 } catch (err) {
   console.error('\nsmoke-with-mock gagal:', err)

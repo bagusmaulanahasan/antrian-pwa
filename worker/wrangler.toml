@@ -18,4 +18,7 @@ compatibility_flags = ["nodejs_compat"]
 enabled = true
 
 [vars]
-ALLOWED_ORIGIN = "*"
+# Origin frontend yang boleh memanggil API. Pisahkan dengan koma.
+# Kosong atau "*" = semua origin (hanya aman untuk jaringan internal).
+# WAJIB diisi di produksi, mis. "https://antrian.pages.dev".
+ALLOWED_ORIGIN = ""

@@ -17,6 +17,7 @@ dev-dist/
 
 # Test artifacts
 smoke-artifacts/
+dist-e2e/
 
 # Logs
 *.log

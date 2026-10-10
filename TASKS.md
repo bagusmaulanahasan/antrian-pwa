@@ -25,9 +25,13 @@ Status: ⬜ belum · 🟨 dikerjakan · ✅ selesai (lolos verifikasi) · ⚠️
 
 - ✅ **T06** Worker API: login + refresh + logout + ganti password + argon2id
       → 51/51 integration test (workerd asli + mock PostgREST)
-- ⬜ **T07** Halaman login + store auth (frontend)
-- ⬜ **T08** Force ganti password saat `is_password_temporary`
-- ⬜ **T09** Route guard per role + layout dashboard
+- ✅ **T07** Halaman login + store auth (frontend)
+      → `src/lib/api.ts` + `src/stores/auth.ts` + `LoginView.vue`
+- ✅ **T08** Force ganti password saat `is_password_temporary`
+      → seluruh route terkunci sampai password diganti
+- ✅ **T09** Route guard per role + layout dashboard
+      → 22/22 E2E (workerd + Chrome headless): guard, redirect peran, persistensi
+        sesi, logout, ganti password paksa
 
 ## Dashboard Admin
 
@@ -99,3 +103,25 @@ atribut tambahan, sehingga cookie kedua hilang. `json()` kini menerima array
 
 `alg:none` ditolak eksplisit, dan perbandingan signature memakai
 constant-time untuk mengurangi risiko timing attack.
+
+### CORS wajib mencerminkan Origin (bukan wildcard)
+
+API memakai cookie HttpOnly, jadi frontend **harus** mengirim
+`credentials: 'include'`. Dengan `Access-Control-Allow-Origin: *`, browser
+menolak responsnya — gejalanya `Failed to fetch` di console padahal Worker
+sudah membalas 200. Karena itu Worker mencerminkan balik header `Origin` dan
+mengirim `Allow-Credentials: true`, dengan daftar putih dari `ALLOWED_ORIGIN`.
+
+### Access token dibaca dari cookie, bukan hanya header
+
+Browser tidak bisa membaca cookie HttpOnly, jadi frontend tidak mungkin
+mengirim header `Authorization`. Awalnya Worker hanya membaca header — akibatnya
+`/api/auth/me` dan `change-password` selalu 401 di browser meski cookie valid.
+Sekarang Worker membaca header lebih dulu, lalu cookie `antrian_access`.
+
+### Balapan initAuth
+
+`App.vue` memanggil `initAuth()` saat mount, sementara route guard memanggilnya
+lagi sebelum navigasi. Tanpa penyatuan promise, guard bisa membaca status
+`loading` dan salah menyimpulkan pengguna anonim — akibatnya admin yang sudah
+login terlempar ke halaman login. `inFlight` sekarang dipakai bersama.
