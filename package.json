@@ -41,6 +41,7 @@
     "@cloudflare/workers-types": "^5.20261009.1",
     "@node-rs/argon2": "^2.2.2",
     "@types/node": "^20.10.0",
+    "@vitejs/plugin-basic-ssl": "^1.1.0",
     "@vitejs/plugin-vue": "^4.5.2",
     "autoprefixer": "^10.4.16",
     "libpg-query": "^18.1.5",
