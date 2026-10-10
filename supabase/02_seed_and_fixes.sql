@@ -17,16 +17,40 @@
 -- ------------------------------------------------------------
 -- 1. Cabut grant anon pada function
 --
---    Postgres memberi EXECUTE ke PUBLIC untuk function baru. Karena
---    next_queue_number memakai `security definer`, anon bisa menghitung
---    nomor antrian tanpa batas. Urutan: revoke dari public dulu, baru
---    grant hanya ke role yang memang boleh.
+--    PENTING: revoke HARUS dari `public, anon, authenticated`.
+--
+--    Supabase memasang default privileges saat project dibuat:
+--        ALTER DEFAULT PRIVILEGES IN SCHEMA public
+--          GRANT EXECUTE ON FUNCTIONS TO anon, authenticated, service_role;
+--
+--    Grant itu LANGSUNG ke peran, bukan melalui PUBLIC. Karena itu
+--    `revoke ... from public` saja tidak pernah menutup celah —
+--    hanya mencabut grant default Postgres yang terpisah.
+--
+--    Peran `authenticated` sengaja tidak diberi akses. Aplikasi ini
+--    memakai custom auth: session ditangani Worker sebagai cookie,
+--    bukan Supabase Auth JWT. Semua tulisan lewat service_role.
 -- ------------------------------------------------------------
-revoke execute on function next_queue_number(date) from public;
-revoke execute on function create_queue_entry(text, uuid, date, print_status) from public;
+revoke execute on function next_queue_number(date)
+  from public, anon, authenticated;
+revoke execute on function create_queue_entry(text, uuid, date, print_status)
+  from public, anon, authenticated;
+revoke execute on function store_refresh_token(uuid, text, timestamptz, text)
+  from public, anon, authenticated;
+revoke execute on function revoke_refresh_token(text)
+  from public, anon, authenticated;
+revoke execute on function revoke_all_refresh_tokens(uuid)
+  from public, anon, authenticated;
 
-grant execute on function next_queue_number(date) to authenticated, service_role;
-grant execute on function create_queue_entry(text, uuid, date, print_status) to authenticated, service_role;
+grant execute on function next_queue_number(date) to service_role;
+grant execute on function create_queue_entry(text, uuid, date, print_status) to service_role;
+grant execute on function store_refresh_token(uuid, text, timestamptz, text) to service_role;
+grant execute on function revoke_refresh_token(text) to service_role;
+grant execute on function revoke_all_refresh_tokens(uuid) to service_role;
+
+-- Hentikan default privileges supaya function berikutnya tidak bocor.
+alter default privileges in schema public
+  revoke execute on functions from public, anon, authenticated;
 
 -- ------------------------------------------------------------
 -- 2. Policy RLS
@@ -105,7 +129,7 @@ create or replace function store_refresh_token(
 )
 returns uuid
 language plpgsql
-security definer
+security invoker
 set search_path = public
 as $$
 declare
@@ -124,15 +148,17 @@ end;
 $$;
 
 -- Hanya service_role (yaitu Worker) yang boleh memanggil.
-revoke execute on function store_refresh_token(uuid, text, timestamptz, text) from public;
-grant execute on function store_refresh_token(uuid, text, timestamptz, text) to service_role;
+revoke execute on function store_refresh_token(uuid, text, timestamptz, text)
+  from public, anon, authenticated;
+grant execute on function store_refresh_token(uuid, text, timestamptz, text)
+  to service_role;
 
 -- Pencabutan token saat logout / ganti password juga lewat RPC supaya
 -- konsisten dengan aturan "tidak ada akses langsung ke refresh_tokens".
 create or replace function revoke_refresh_token(p_token_hash text)
 returns boolean
 language plpgsql
-security definer
+security invoker
 set search_path = public
 as $$
 declare
@@ -147,14 +173,15 @@ begin
 end;
 $$;
 
-revoke execute on function revoke_refresh_token(text) from public;
+revoke execute on function revoke_refresh_token(text)
+  from public, anon, authenticated;
 grant execute on function revoke_refresh_token(text) to service_role;
 
 -- Cabut seluruh refresh token milik satu user (dipakai setelah ganti password).
 create or replace function revoke_all_refresh_tokens(p_user_id uuid)
 returns integer
 language plpgsql
-security definer
+security invoker
 set search_path = public
 as $$
 declare
@@ -169,7 +196,8 @@ begin
 end;
 $$;
 
-revoke execute on function revoke_all_refresh_tokens(uuid) from public;
+revoke execute on function revoke_all_refresh_tokens(uuid)
+  from public, anon, authenticated;
 grant execute on function revoke_all_refresh_tokens(uuid) to service_role;
 
 do $$
@@ -243,9 +271,53 @@ on conflict do nothing;
 
 -- ============================================================
 --  Verifikasi
+--
+--  Pemeriksaan di bawah GAGAK SENDIRI (raise exception) kalau
+--  masih ada function publik yang bisa dipanggil anon atau
+--  authenticated. Exception membatalkan seluruh transaksi, jadi
+--  tidak mungkin ada perubahan yang hanya diterapkan sebagian.
+--
+--  Tidak perlu menafsirkan angka true/false — cukup perhatikan
+--  apakah pesan "VERIFIKASI LULUS" muncul.
 -- ============================================================
-select 'grant anon pada function' as cek, has_function_privilege('anon', 'next_queue_number(date)', 'execute') as hasil;
---  hasil harus: false
+do $$
+declare
+  v_leak text;
+begin
+  select string_agg(format('%s(%s)', p.proname, pg_get_function_identity_arguments(p.oid)), ', ')
+    into v_leak
+  from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public'
+    and p.prokind = 'f'
+    and (has_function_privilege('anon',          p.oid, 'execute')
+      or has_function_privilege('authenticated', p.oid, 'execute'));
+
+  if v_leak is not null then
+    raise exception 'GAGAL — masih bisa dipanggil tanpa login: %', v_leak;
+  end if;
+
+  raise notice 'VERIFIKASI LULUS — tidak ada function publik yang bisa dipanggil anon/authenticated';
+end;
+$$;
+
+-- Ringkasan grant (bacaan saja, tidak memengaruhi apa pun)
+select
+  p.proname                                                as function,
+  has_function_privilege('anon',          p.oid, 'execute') as anon,
+  has_function_privilege('authenticated', p.oid, 'execute') as authenticated,
+  has_function_privilege('service_role',  p.oid, 'execute') as service_role,
+  case when p.prosecdef then 'definer' else 'invoker' end   as mode
+from pg_proc p
+join pg_namespace n on n.oid = p.pronamespace
+where n.nspname = 'public'
+  and p.prokind = 'f'
+order by (has_function_privilege('anon', p.oid, 'execute')
+          or has_function_privilege('authenticated', p.oid, 'execute')) desc,
+         p.proname;
+
+--  Cara baca: baris dengan anon = true atau authenticated = true
+--  TIDAK BOLEH diabaikan. Salin pesan error-nya dan laporkan.
 
 select 'tabel di publication realtime' as cek, count(*) as hasil
   from pg_publication_tables
@@ -254,7 +326,3 @@ select 'tabel di publication realtime' as cek, count(*) as hasil
 
 select key, updated_at from settings order by key;
 --  harus mengembalikan 4 baris
-
-select 'rpc store_refresh_token' as cek,
-       has_function_privilege('anon', 'store_refresh_token(uuid, text, timestamptz, text)', 'execute') as hasil;
---  hasil harus: false

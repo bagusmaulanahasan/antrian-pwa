@@ -1,4 +1,4 @@
-﻿-- ============================================================
+-- ============================================================
 --  Sistem Antrian â€” Supabase Postgres Schema
 --  Jalankan di SQL Editor Supabase
 -- ============================================================
@@ -118,7 +118,7 @@ create unique index idx_queue_single_serving
 create or replace function next_queue_number(p_date date)
 returns int
 language plpgsql
-security definer
+security invoker
 set search_path = public
 as $$
 declare
@@ -140,7 +140,7 @@ create or replace function create_queue_entry(
 )
 returns queue_entries
 language plpgsql
-security definer
+security invoker
 set search_path = public
 as $$
 declare
@@ -156,13 +156,26 @@ $$;
 -- ============================================================
 --  Seed Owner & Settings Default
 -- ============================================================
-insert into users (email, password_hash, role, is_password_temporary)
-values (
-  'owner@example.com',
-  '$argon2id$v=19$m=19456,t=2,p=1$REPLACE_WITH_ARGON2_HASH',
-  'owner',
-  true
-);
+--  Akun owner SENGAJA TIDAK di-seed di sini.
+--
+--  Menanamkan akun owner dengan password placeholder di file skema
+--  berbahaya: akun itu ikut ada di setiap project yang memakai
+--  schema ini. Buat manual setelah schema selesai, memakai hash
+--  argon2id asli dari:
+--
+--      npm run hash-password "#Pass123" owner@email-anda.com owner --temp
+--
+--  Perintah itu mencetak statement INSERT siap tempel ke SQL Editor.
+--
+--  Insert manual (jangan pakai hash contoh):
+--
+--    insert into users (email, password_hash, role, is_password_temporary)
+--    values (
+--      'owner@email-anda.com',
+--      '$argon2id$v=19$m=...$SALT_ANDA$HASIL_ANDA',
+--      'owner',
+--      true
+--    );
 
 insert into settings (key, value) values
   ('reset_hour', '0'),
@@ -185,13 +198,43 @@ alter table queue_entries enable row level security;
 alter table categories enable row level security;
 alter table settings enable row level security;
 
--- Publik (Dashboard TV & Admin via Anon key) read access
+-- Publik (Dashboard TV & Admin via Anon key) hanya BACA.
 create policy "read categories" on categories for select to anon, authenticated using (true);
 create policy "read queue_entries" on queue_entries for select to anon, authenticated using (true);
 
--- Tulis melalui service_role (Cloudflare Workers) atau RPC
-create policy "insert queue_entries" on queue_entries for insert to authenticated with check (true);
-revoke insert on queue_entries from anon;
+-- Semua tulisan lewat Worker memakai service_role, yang memang
+-- melakukan bypass RLS. Tidak ada policy INSERT untuk anon maupun
+-- authenticated — dengan sengaja.
+revoke insert, update, delete on queue_entries from anon, authenticated;
+revoke insert, update, delete on refresh_tokens from anon, authenticated;
+revoke all on users from anon, authenticated;
 
-grant execute on function create_queue_entry(text, uuid, date, print_status)
-  to authenticated, service_role;
+-- ============================================================
+--  Grant function — hanya service_role
+--
+--  PENTING: Supabase memasang default privileges saat project dibuat:
+--
+--      ALTER DEFAULT PRIVILEGES IN SCHEMA public
+--        GRANT EXECUTE ON FUNCTIONS TO anon, authenticated, service_role;
+--
+--  Grant itu LANGSUNG ke peran, bukan lewat PUBLIC. Karena itu
+--  `revoke ... from public` saja tidak menutup celah.
+--  Ketiga peran harus dicabut secara eksplisit.
+--
+--  Peran `authenticated` sengaja tidak diberi akses. Aplikasi ini
+--  memakai custom auth — session ditangani Worker sebagai cookie,
+--  bukan Supabase Auth JWT — sehingga tidak ada request dari aplikasi
+--  ini yang memakai peran tersebut.
+-- ============================================================
+revoke execute on function next_queue_number(date)
+  from public, anon, authenticated;
+revoke execute on function create_queue_entry(text, uuid, date, print_status)
+  from public, anon, authenticated;
+
+grant execute on function next_queue_number(date) to service_role;
+grant execute on function create_queue_entry(text, uuid, date, print_status) to service_role;
+
+-- Tutup default privileges supaya function berikutnya tidak bocor
+-- dengan cara yang sama.
+alter default privileges in schema public
+  revoke execute on functions from public, anon, authenticated;
