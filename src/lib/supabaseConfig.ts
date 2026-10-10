@@ -79,9 +79,9 @@ export const envStatus = ((): SupabaseEnvStatus => {
 
   if (!RAW_API_BASE) {
     hints.push('VITE_API_BASE_URL kosong — endpoint /api/auth (login, refresh) belum bisa dipanggil. Fitur auth belum aktif sampai Worker di-deploy.')
-  } else if (!/^https:\/\//i.test(RAW_API_BASE)) {
+  } else if (RAW_API_BASE !== '/api' && !/^https:\/\//i.test(RAW_API_BASE)) {
     problems.push(`Format VITE_API_BASE_URL tidak valid: "${RAW_API_BASE}".`)
-    hints.push('Base URL Worker harus diawali https://, misal https://antrian-api.workers.dev')
+    hints.push('Base URL Worker harus diawali https://, misal https://antrian-api.workers.dev, atau "/api" untuk proxy dev Vite.')
   }
 
   if (!IS_DEV) {

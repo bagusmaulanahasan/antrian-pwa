@@ -31,15 +31,18 @@ export class ApiError extends Error {
   }
 }
 
-/** Base URL Worker. Kosong bila belum di-deploy — pemanggil cek lebih dulu. */
+/** Base URL Worker mentah dari env. */
+function rawApiBaseUrl(): string {
+  return typeof __API_BASE_URL__ === 'string' ? __API_BASE_URL__.trim() : ''
+}
+
+/** Base URL Worker yang siap dipakai untuk fetch (setelah strip suffix). */
 export function apiBaseUrl(): string {
-  const raw = typeof __API_BASE_URL__ === 'string' ? __API_BASE_URL__.trim() : ''
-  // Buang trailing slash dan trailing /api agar tidak terjadi double /api/api
-  return raw.replace(/\/+$/, '').replace(/\/api$/, '')
+  return rawApiBaseUrl().replace(/\/+$/, '').replace(/\/api$/, '')
 }
 
 export function isApiConfigured(): boolean {
-  return apiBaseUrl().length > 0
+  return rawApiBaseUrl().length > 0
 }
 
 export interface ApiBase {
