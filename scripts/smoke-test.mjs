@@ -79,8 +79,12 @@ try {
     if (!req.url().includes('favicon')) consoleErrors.push(`requestfailed: ${req.url()} (${f?.errorText})`)
   })
 
-  // --- 1. Beranda ---
-  console.log('\n[1] Beranda /')
+  // --- 1. Beranda (/) ---
+  //
+  // Tidak ada halaman beranda lagi. `/` selalu mengarahkan ke /login, dan
+  // guard route lalu memindahkannya ke dashboard bila sesi sudah ada. Pada
+  // build smoke test tidak ada sesi, jadi tujuan yang diharapkan adalah /login.
+  console.log('\n[1] Beranda / (harus ke /login)')
   const resp = await page.goto(`${BASE}/`, { waitUntil: 'domcontentloaded', timeout: 30000 })
   assert(resp?.status() === 200, `HTTP 200 pada / (dapat ${resp?.status()})`)
 
@@ -89,19 +93,14 @@ try {
     await page.waitForSelector('h1', { timeout: 8000 })
   } catch {
     mounted = false
-    assert(false, 'Aplikasi ter-mount di beranda (h1 ditemukan)')
+    assert(false, 'Aplikasi ter-mount setelah redirect (h1 ditemukan)')
     await dumpFailureState(page, 'home-failed')
   }
   if (mounted) {
-    assert(true, 'Aplikasi ter-mount di beranda (h1 ditemukan)')
+    assert(true, 'Aplikasi ter-mount setelah redirect (h1 ditemukan)')
     const heading = await page.$eval('h1', (el) => el.textContent?.trim())
-    assert(heading === 'Sistem Antrian PWA', `Heading benar: "${heading}"`)
-    const homeText = await page.evaluate(() => document.body.innerText)
-    assert(
-      homeText.includes('Supabase terkonfigurasi') || homeText.includes('Supabase belum dikonfigurasi'),
-      'Banner status Supabase tampil di beranda',
-    )
-    assert(homeText.includes('Dashboard Admin'), 'Kartu modul aplikasi tampil')
+    assert(heading === 'Sistem Antrian', `Heading halaman login: "${heading}"`)
+    assert(page.url().includes('/login'), '/ tanpa sesi diarahkan ke /login', page.url())
   }
 
   // --- 2. Navigasi router ke halaman dev ---
@@ -118,26 +117,26 @@ try {
   const isProductionBuild =
     process.env.SMOKE_DEV_SERVER !== '1' && process.env.SMOKE_EXPECT_DEV_PAGE !== '1'
   if (mounted) {
-    // Pakai testid: link "Masuk" disembunyikan kalau sesi masih hidup dari
-    // test sebelumnya, jadi selector href bisa menunjuk elemen yang tak terlihat.
-    const link = await page.$('[data-testid="nav-test-connection"]')
-    assert(link !== null, 'Link ke halaman dev tersedia di beranda')
-    if (link) {
-      await link.click()
-      await page.waitForFunction(
-        () =>
-          location.pathname === '/dev/test-connection' || location.pathname === '/',
-        { timeout: 20000 },
-      ).catch(() => {})
-    }
+    // Halaman diagnosis tidak lagi ditautkan dari UI mana pun — harus diketik
+    // manual. Smoke test karena itu navigasi langsung lewat URL.
+    await page.goto(`${BASE}/dev/test-connection`, { waitUntil: 'domcontentloaded', timeout: 30000 })
 
     if (isProductionBuild) {
+      // Tunggu sampai guard benar-benar selesai mengarahkan. Menyertakan path
+      // awal pada kondisi wait akan langsung terpenuhi dan membuat pengecekan
+      // berlari sebelum redirect selesai.
+      await page
+        .waitForFunction(() => location.pathname === '/login', { timeout: 20000 })
+        .catch(() => {})
       check(
-        page.url().endsWith('/'),
-        'route devOnly dialihkan ke beranda pada build produksi',
+        page.url().endsWith('/login'),
+        'route devOnly dialihkan ke login pada build produksi',
         page.url(),
       )
     } else {
+      await page
+        .waitForFunction(() => location.pathname === '/dev/test-connection', { timeout: 20000 })
+        .catch(() => {})
       check(
         page.url().endsWith('/dev/test-connection'),
         `URL berpindah ke halaman dev (${new URL(page.url()).pathname})`,
@@ -265,11 +264,12 @@ try {
 
   // --- 5. Error console ---
   console.log('\n[5] Error console')
-  // Skenario diagnosa memang sengaja memicu HTTP error:
-  //   403 â†’ probe RLS membuktikan anon tidak boleh menulis
-  //   401/404 â†’ skenario policy SELECT hilang / tabel belum dibuat
-  // WebSocket 426 hanya muncul saat backend mock (tidak mendukung realtime).
-  const allowedStatuses = (process.env.SMOKE_ALLOW_HTTP_STATUS ?? '403')
+// Skenario diagnosa memang sengaja memicu HTTP error:
+//   403 → probe RLS membuktikan anon tidak boleh menulis
+//   401 → grant RPC dicabut dari anon, dan /api/auth/* menolak sesi kosong
+//   404 → skenario policy SELECT hilang / tabel belum dibuat
+// WebSocket 426 hanya muncul saat backend mock (tidak mendukung realtime).
+const allowedStatuses = (process.env.SMOKE_ALLOW_HTTP_STATUS ?? '403,401')
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean)

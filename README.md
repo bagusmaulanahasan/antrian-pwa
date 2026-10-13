@@ -152,7 +152,9 @@ produksi.
 
 ## Verifikasi koneksi
 
-Buka **`/dev/test-connection`** (hanya tersedia pada `npm run dev`).
+Buka **`/dev/test-connection`**. Halaman ini **tidak ditautkan dari UI mana pun**,
+jadi harus diketik manual di address bar — dan hanya terbuka pada `npm run dev`.
+Pada build produksi route-nya dialihkan ke `/login`.
 
 Halaman ini menjalankan sebelas pemeriksaan dan menjelaskan setiap kegagalan
 dengan langkah perbaikan yang konkret:

@@ -160,12 +160,6 @@ async function onSubmit() {
           </button>
         </div>
       </form>
-
-      <p class="mt-4 text-center text-xs text-slate-500">
-        <RouterLink to="/dev/test-connection" class="underline hover:text-slate-700">
-          Halaman diagnosis koneksi
-        </RouterLink>
-      </p>
     </div>
   </div>
 </template>

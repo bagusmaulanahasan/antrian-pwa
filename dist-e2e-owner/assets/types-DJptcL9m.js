@@ -1,1 +1,0 @@
-function g(t=0,i=new Date){const n=Number.isFinite(t)&&t>=0&&t<=23?Math.floor(t):0,a=typeof i=="string"?new Date(i):i,e=new Date(a.getTime()+7*60*60*1e3);return n>0&&e.getUTCHours()<n&&e.setUTCDate(e.getUTCDate()-1),e.toISOString().slice(0,10)}export{g};

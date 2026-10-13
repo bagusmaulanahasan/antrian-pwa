@@ -1,6 +1,5 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { authUser, initAuth, isAuthenticated, isOwner, mustChangePassword } from '@/stores/auth'
-import HomeView from '@/views/HomeView.vue'
 import LoginView from '@/views/LoginView.vue'
 import TestConnectionView from '@/views/TestConnectionView.vue'
 
@@ -16,7 +15,9 @@ declare module 'vue-router' {
 }
 
 const routes: RouteRecordRaw[] = [
-  { path: '/', name: 'home', component: HomeView },
+  // Tidak ada beranda. Guard di bawah mengarahkan `/` ke login atau dashboard
+  // sesuai status sesi, jadi route ini hanya titik awal untuk redirect.
+  { path: '/', redirect: '/login' },
   { path: '/login', name: 'login', component: LoginView, meta: { devOnly: false } },
   {
     path: '/admin',
@@ -64,7 +65,7 @@ export function homeRouteFor(role: 'owner' | 'admin' | undefined): string {
  * Route guard.
  *
  * Urutan importance:
- *  1. Dev page di produksi → lempar ke beranda.
+ *  1. Dev page di produksi → lempar ke login (guard pengaman, bukan navigasi).
  *  2. Sesi dipulihkan sekali sebelum keputusan diambil.
  *  3. `mustChangePassword` → seluruh halaman terkunci, hanya boleh ke
  *     /change-password. Ini memaksa admin mengganti password hasil reset owner.
@@ -72,7 +73,7 @@ export function homeRouteFor(role: 'owner' | 'admin' | undefined): string {
  *  5. Route ownerOnly tapi bukan owner → /admin.
  */
 router.beforeEach(async (to) => {
-  if (to.meta.devOnly && import.meta.env.PROD) return { name: 'home' }
+  if (to.meta.devOnly && import.meta.env.PROD) return { name: 'login' }
 
   // Pulihkan sesi lebih dulu untuk route mana pun yang butuh tahu status auth.
   // Tanpa ini, memuat penuh halaman di /login selalu tampak anonim walau
