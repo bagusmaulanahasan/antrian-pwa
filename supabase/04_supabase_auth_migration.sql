@@ -67,7 +67,32 @@ comment on function public.current_role() is
 
 
 -- ============================================================
---  2. Helper: apakah akun aktif
+--  2. Tabel profiles
+-- ============================================================
+--  Data khusus aplikasi. Identitas dan password hidup di auth.users.
+--
+--  URUTAN PENTING: tabel ini harus dibuat SEBELUM is_active_user()
+--  dan handle_new_user(). PostgreSQL memvalidasi body function
+--  `language sql` saat CREATE, jadi fungsi yang membaca tabel yang
+--  belum ada akan gagal dengan "relation does not exist".
+create table if not exists public.profiles (
+  id           uuid primary key references auth.users(id) on delete cascade,
+  display_name text,
+  is_active    boolean     not null default true,
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now()
+);
+
+comment on table public.profiles is
+  'Data aplikasi per pengguna. Peran TIDAK ada di sini — dibaca dari app_metadata JWT.';
+
+alter table public.profiles enable row level security;
+
+create index if not exists idx_profiles_active on public.profiles(is_active);
+
+
+-- ============================================================
+--  3. Helper: apakah akun aktif
 -- ============================================================
 --  Owner bisa menonaktifkan akun admin. Akun yang dinonaktifkan
 --  tetap boleh login (Supabase Auth tidak tahu soal ini), jadi
@@ -89,26 +114,6 @@ $$;
 
 comment on function public.is_active_user() is
   'True bila pengguna login dan akunnya belum dinonaktifkan owner.';
-
-
--- ============================================================
---  3. Tabel profiles
--- ============================================================
---  Data khusus aplikasi. Identitas dan password hidup di auth.users.
-create table if not exists public.profiles (
-  id           uuid primary key references auth.users(id) on delete cascade,
-  display_name text,
-  is_active    boolean     not null default true,
-  created_at   timestamptz not null default now(),
-  updated_at   timestamptz not null default now()
-);
-
-comment on table public.profiles is
-  'Data aplikasi per pengguna. Peran TIDAK ada di sini — dibaca dari app_metadata JWT.';
-
-alter table public.profiles enable row level security;
-
-create index if not exists idx_profiles_active on public.profiles(is_active);
 
 
 -- ============================================================

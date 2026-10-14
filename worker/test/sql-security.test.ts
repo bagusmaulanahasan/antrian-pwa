@@ -399,4 +399,51 @@ describe('Invariant migrasi Supabase Auth', () => {
       'set_user_role harus melindungi owner terakhir',
     )
   })
+
+  /**
+   * Regresi: is_active_user() sempat dibuat SEBELUM tabel profiles.
+   * PostgreSQL memvalidasi body function `language sql` saat CREATE,
+   * jadi hasilnya "relation public.profiles does not exist".
+   *
+   * Test ini mengunci urutan yang benar untuk semua file SQL.
+   */
+  it('function `language sql` tidak membaca tabel sebelum tabel dibuat', () => {
+    const files = [
+      'supabase/02_seed_and_fixes.sql',
+      'supabase/03_fix_privileges.sql',
+      MIGRATION,
+    ]
+
+    for (const rel of files) {
+      const text = loadSql(rel)
+
+      // Posisi setiap CREATE TABLE.
+      const tablePos = new Map<string, number>()
+      for (const m of text.matchAll(/create\s+table(?:\s+if\s+not\s+exists)?\s+([a-z_.]+)/gi)) {
+        const name = m[1].toLowerCase()
+        tablePos.set(name, Math.max(tablePos.get(name) ?? 0, m.index ?? 0))
+      }
+
+      // Tiap function `language sql`, beserta isi body-nya.
+      const fnRe =
+        /create\s+or\s+replace\s+function\s+([a-z_.]+)\s*\([^)]*\)[^$]*\$\$([\s\S]*?)\$\$/gi
+      for (const m of text.matchAll(fnRe)) {
+        const [, name, body] = m
+        const fnStart = m.index ?? 0
+
+        if (!/language\s+sql/i.test(text.slice(fnStart, fnStart + 400))) continue
+
+        for (const ref of body.matchAll(/\b(public\.[a-z_]+)/gi)) {
+          const table = ref[1].toLowerCase()
+          const created = tablePos.get(table)
+          if (created === undefined) continue
+          assert.ok(
+            fnStart > created,
+            `${rel}: ${name} membaca ${table} (dibuat di posisi ${created}) ` +
+              `tapi function dibuat lebih dulu di posisi ${fnStart}`,
+          )
+        }
+      }
+    }
+  })
 })
