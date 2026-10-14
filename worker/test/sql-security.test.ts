@@ -295,15 +295,19 @@ describe('Invariant keamanan SQL', () => {
   })
 })
 
+/** File SQL migrasi ke Supabase Auth. */
+const MIGRATION = 'supabase/04_supabase_auth_migration.sql'
+/** File SQL RPC yang dipanggil browser langsung. */
+const DIRECT = 'supabase/05_direct_api_functions.sql'
+
 /**
  * Invariant khusus migrasi ke Supabase Auth (04).
  *
- * Yang diuji di sini bukan sintaks, tapihtubuh keamanan: kalau salah
+ * Yang diuji di sini bukan sintaks, tapi bentuk keamanan: kalau salah
  * satu lolos, ini adalah privilege escalation yang tidak akan terlihat
  * dari sisi frontend.
  */
 describe('Invariant migrasi Supabase Auth', () => {
-  const MIGRATION = 'supabase/04_supabase_auth_migration.sql'
   const sql = loadSql(MIGRATION)
 
   it('peran dibaca dari app_metadata, tidak pernah dari raw_user_meta_data', () => {
@@ -462,6 +466,7 @@ describe('Invariant migrasi Supabase Auth', () => {
       'supabase/02_seed_and_fixes.sql',
       'supabase/03_fix_privileges.sql',
       MIGRATION,
+      DIRECT,
     ]
 
     for (const rel of files) {
@@ -495,5 +500,87 @@ describe('Invariant migrasi Supabase Auth', () => {
         }
       }
     }
+  })
+})
+/**
+ * Invariant RPC yang dipanggil browser langsung (05).
+ *
+ * File ini menggantikan Worker untuk operasi antrean. Kalau ada
+ * SECURITY DEFINER di sini, RLS akan dilewati dan seluruh proteksi
+ * yang dibangun di file 04 jadi tidak berarti.
+ */
+describe('Invariant RPC akses langsung', () => {
+  const sql = loadSql(DIRECT)
+
+  const DIRECT_FUNCTIONS = [
+    'next_serving',
+    'set_entry_status',
+    'recall_entry',
+    'mark_printed',
+    'queue_snapshot',
+    'create_category',
+    'set_setting',
+  ]
+
+  it('tidak ada SECURITY DEFINER — RLS harus tetap berlaku', () => {
+    assert.doesNotMatch(
+      sql,
+      /security\s+definer/i,
+      'SECURITY DEFINER akan melewati RLS untuk pemanggil apa pun',
+    )
+    assert.ok(
+      /security\s+invoker/i.test(sql),
+      'fungsi harus secara eksplisit memakai security invoker',
+    )
+  })
+
+  it('setiap function dicabut dari PUBLIC/anon', () => {
+    const revoked = new Set<string>()
+    for (const line of sql.split('\n')) {
+      const m = line.match(/^\s*revoke\s+execute\s+on\s+function\s+(?:public\.)?([a-z_]+)/i)
+      if (m) revoked.add(m[1].toLowerCase())
+    }
+
+    const missing = DIRECT_FUNCTIONS.filter((fn) => !revoked.has(fn))
+    assert.deepEqual(
+      missing,
+      [],
+      'Postgres memberi EXECUTE ke PUBLIC secara default; revoke wajib eksplisit',
+    )
+  })
+
+  it('setiap function diberikan ke authenticated', () => {
+    for (const fn of DIRECT_FUNCTIONS) {
+      assert.match(
+        sql,
+        new RegExp(
+          `grant\\s+execute\\s+on\\s+function\\s+(?:public\\.)?${fn}\\b[^;]*to\\s+authenticated`,
+          'i',
+        ),
+        `${fn} harus bisa dipanggil oleh pengguna yang sudah login`,
+      )
+    }
+  })
+
+  it('next_serving memakai row locking supaya dua admin tidak bentrok', () => {
+    const at = sql.indexOf('next_serving')
+    const block = sql.slice(at, at + 1800)
+    assert.match(
+      block,
+      /for\s+update\s+skip\s+locked/i,
+      'tanpa FOR UPDATE SKIP LOCKED, dua admin yang menekan bersamaan bisa bentrok',
+    )
+  })
+
+  it('next_serving menyelesaikan nomor serving sebelum menaikkan yang baru', () => {
+    const at = sql.indexOf('next_serving')
+    const block = sql.slice(at, at + 1800)
+    const completeAt = block.indexOf("= 'done'")
+    const promoteAt = block.indexOf("= 'serving'")
+    assert.ok(completeAt > -1 && promoteAt > -1, 'kedua langkah harus ada')
+    assert.ok(
+      completeAt < promoteAt,
+      'harus menyelesaikan dulu baru menaikkan; kalau dibalik bisa lewat satu nomor',
+    )
   })
 })
