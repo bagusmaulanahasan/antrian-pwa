@@ -369,6 +369,56 @@ describe('Invariant migrasi Supabase Auth', () => {
     )
   })
 
+  /**
+   * Regresi yang sama seperti insiden b5521c5, terulang di file 04:
+   * PostgreSQL memberi EXECUTE ke PUBLIC untuk SETIAP function baru.
+   * Test sebelumnya hanya memeriksa tidak ada `grant ... to anon` —
+   * itu tidak cukup, karena grant default itu datang dari dalam
+   * database, bukan dari teks SQL.
+   *
+   * Setiap function yang didefinisikan di file migrasi WAJIB punya
+   * revoke eksplisit terhadap anon, kecuali ada alasan recorded.
+   */
+  it('setiap function baru dicabut dari PUBLIC/anon', () => {
+    const defined = [...sql.matchAll(/create or replace function\s+(?:public\.)?([a-z_]+)/gi)]
+      .map((m) => m[1].toLowerCase())
+    assert.ok(defined.length >= 9, `hanya menemukan ${defined.length} function`)
+
+    // Cocokkan baris SQL yang benar-benar ada, bukan teks komentar:
+    // loadSql() menghapus komentar, jadi pencarian berbasis kalimat
+    // di dalam komentar akan selalu gagal diam-diam.
+    const revoked = new Set<string>()
+    for (const line of sql.split('\n')) {
+      const m = line.match(/^\s*revoke\s+execute\s+on\s+function\s+(?:public\.)?([a-z_]+)/i)
+      if (m) revoked.add(m[1].toLowerCase())
+    }
+
+    // Function antrean dibuat di file lain; penataannya oleh file 03.
+    const notRevoked = defined.filter(
+      (fn) => !['next_queue_number', 'create_queue_entry'].includes(fn) && !revoked.has(fn),
+    )
+
+    assert.deepEqual(
+      notRevoked,
+      [],
+      'function berikut tidak dicabut dari anon; Postgres memberi EXECUTE ke PUBLIC secara default',
+    )
+  })
+
+  it('bootstrap_owner tertutup untuk semua peran non-postgres', () => {
+    const line = sql
+      .split('\n')
+      .find((l) =>
+        /^\s*revoke\s+execute\s+on\s+function\s+public\.bootstrap_owner\(uuid\)/i.test(l),
+      )
+    assert.ok(line, 'tidak ada revoke untuk bootstrap_owner')
+    assert.match(
+      line,
+      /from\s+public,\s*anon,\s*authenticated/i,
+      'bootstrap_owner harus ditutup untuk public, anon, dan authenticated',
+    )
+  })
+
   it('fungsi antrean tetap tertutup untuk anon', () => {
     for (const fn of ['next_queue_number', 'create_queue_entry']) {
       assert.match(

@@ -7,7 +7,7 @@
 --  ============================================================
 --  Pindahkan otorisasi dari Cloudflare Worker (service_role) ke
 --  Supabase Auth + Row Level Security, sehingga frontend bisa
---  langsung ber talks dengan Supabase tanpa backend perantara.
+--  langsung berbicara dengan Supabase tanpa backend perantara.
 --
 --  TAHAP INI ADALAH TAHAP AWAL YANG SEPENUHNYA ADITIF:
 --  belum menghapus apa pun. `users` dan `refresh_tokens` masih ada
@@ -437,7 +437,51 @@ create policy "write settings" on settings
 
 
 -- ============================================================
---  13. Grant RPC antrean ke authenticated
+--  13. Cabut EXECUTE default PUBLIC dari function baru
+--
+--  WAJIB. PostgreSQL memberi EXECUTE ke PUBLIC untuk SETIAP function
+--  baru yang dibuat. Tanpa revoke eksplisit, peran `anon` bisa
+--  memanggil function yang secara teknis tersedia untuk semua orang.
+--
+--  Yang paling berbahaya: bootstrap_owner(). Siapa pun bisa memanggilnya
+--  sebelum owner resmi dik-bootstrap, lalu mengambil alih sistem.
+--
+--  Function trigger (handle_new_user, touch_updated_at) dicabut
+--  dari SEMUA peran — memanggilnya langsung dari jaringan tidak
+--  punya arti dan hanya membuka celah.
+--
+--  Catatan: postgres (SQL Editor) tetap bisa memanggil semuanya
+--  karena pemilik objek mengabaikan grant.
+-- ============================================================
+revoke execute on function public.handle_new_user()   from public, anon, authenticated;
+revoke execute on function public.touch_updated_at()  from public, anon, authenticated;
+
+revoke execute on function public.current_role()       from public, anon;
+revoke execute on function public.is_active_user()     from public, anon;
+
+revoke execute on function public.create_user(text, text, text)   from public, anon;
+revoke execute on function public.list_users()                    from public, anon;
+revoke execute on function public.set_user_role(uuid, text)       from public, anon;
+revoke execute on function public.set_user_active(uuid, boolean)  from public, anon;
+
+-- bootstrap_owner juga ditutup untuk authenticated: pemanggil yang
+-- sah adalah postgres lewat SQL Editor, yang mengabaikan grant.
+revoke execute on function public.bootstrap_owner(uuid) from public, anon, authenticated;
+
+grant execute on function public.current_role()       to authenticated;
+grant execute on function public.is_active_user()     to authenticated;
+grant execute on function public.create_user(text, text, text)   to authenticated;
+grant execute on function public.list_users()                    to authenticated;
+grant execute on function public.set_user_role(uuid, text)       to authenticated;
+grant execute on function public.set_user_active(uuid, boolean)  to authenticated;
+
+-- Hentikan default privileges untuk function berikutnya.
+alter default privileges in schema public
+  revoke execute on functions from public, anon;
+
+
+-- ============================================================
+--  14. Grant RPC antrean ke authenticated
 -- ============================================================
 --  PENTING: grant hanya ke `authenticated`, TIDAK ke `anon`.
 --  Ini melanjutkan hardening commit b5521c5 — anon tetap tidak boleh
@@ -452,11 +496,12 @@ alter default privileges in schema public
 
 
 -- ============================================================
---  14. Verifikasi
+--  15. Verifikasi
 -- ============================================================
 do $$
 declare
   v_leak text;
+  v_bad  text;
 begin
   -- anon TIDAK BOLEH punya EXECUTE pada function antrean.
   select string_agg(p.proname, ', ')
@@ -477,7 +522,26 @@ begin
     raise exception 'GAGAL — tabel profiles belum dibuat.';
   end if;
 
-  raise notice 'TAHAP 1 BERHASIL — profiles ada, anon tetap terkunci dari function antrean.';
+  -- Semua function baru milik migrasi ini WAJIB tertutup untuk anon.
+  -- Ini yang terlewat di versi pertama: Postgres memberi EXECUTE ke
+  -- PUBLIC secara default untuk function baru.
+  select string_agg(p.proname, ', ')
+    into v_bad
+  from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public'
+    and p.prokind = 'f'
+    and p.proname in (
+      'handle_new_user', 'touch_updated_at', 'current_role', 'is_active_user',
+      'bootstrap_owner', 'set_user_role', 'set_user_active', 'list_users', 'create_user'
+    )
+    and has_function_privilege('anon', p.oid, 'execute');
+
+  if v_bad is not null then
+    raise exception 'GAGAL — anon masih bisa memanggil function migrasi: %', v_bad;
+  end if;
+
+  raise notice 'TAHAP 1 BERHASIL — profiles ada, function migrasi tertutup untuk anon.';
 end;
 $$;
 
