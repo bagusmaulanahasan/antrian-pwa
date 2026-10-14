@@ -8,7 +8,7 @@
  * yang diuji:
  *  - /api/health  : ok saat DB hidup, 503 saat env belum lengkap
  *  - login       : sukses, ditolak password salah, ditolak email tak dikenal
- *  - cookie      : HttpOnly + SameSite=None + Secure, token tidak bocor ke body
+ *  - cookie      : HttpOnly + SameSite=Lax + Secure, token tidak bocor ke body
  *  - refresh     : rotasi token, token lama dicabut
  *  - logout      : cookie dihapus, refresh token dicabut
  *  - security    : tidak ada stack trace yang bocor
@@ -228,8 +228,8 @@ try {
       cookies.antrian_refresh?.raw,
     )
     check(
-      cookies.antrian_refresh?.raw.includes('SameSite=None') ?? false,
-      'cookie refresh SameSite=None',
+      cookies.antrian_refresh?.raw.includes('SameSite=Lax') ?? false,
+      'cookie refresh SameSite=Lax',
       cookies.antrian_refresh?.raw,
     )
     check(

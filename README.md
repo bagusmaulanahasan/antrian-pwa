@@ -313,6 +313,27 @@ Isi `verify`:
 Tidak ada satu pun test yang memerlukan Supabase atau Worker sungguhan. Semuanya
 memakai mock, jadi aman dijalankan tanpa menyentuh data produksi.
 
+### Tidak perlu menjalankan semuanya
+
+Jalankan **hanya** suite yang sesuai dengan bagian yang Anda ubah:
+
+```bash
+npm run verify:ui      # typecheck + smoke          → perubahan UI presentasi
+npm run verify:auth    # typecheck + unit + e2e auth → route, guard, autentikasi
+npm run verify:sql     # sql:check + unit + worker  → schema, grant, RLS, RPC
+npm run verify:queue   # typecheck + worker + queue → API antrian
+```
+
+Dua hal yang sering membuat pengujian berlebihan:
+
+- `npm run build` **tidak** perlu dijalankan terpisah kalau E2E sudah dijalankan —
+  tiap E2E sudah membangun bundle-nya sendiri.
+- `npm run test:unit` **tidak** menyentuh komponen `.vue` sama sekali (proyek ini
+  tidak memakai `vue-test-utils`), jadi tidak berguna untuk perubahan tampilan.
+
+Matriks lengkap "jenis perubahan → verifikasi minimum" ada di
+[`AGENTS.md`](./AGENTS.md).
+
 Skrip lain:
 
 ```bash
