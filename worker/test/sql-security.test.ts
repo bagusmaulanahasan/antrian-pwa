@@ -294,3 +294,109 @@ describe('Invariant keamanan SQL', () => {
     )
   })
 })
+
+/**
+ * Invariant khusus migrasi ke Supabase Auth (04).
+ *
+ * Yang diuji di sini bukan sintaks, tapihtubuh keamanan: kalau salah
+ * satu lolos, ini adalah privilege escalation yang tidak akan terlihat
+ * dari sisi frontend.
+ */
+describe('Invariant migrasi Supabase Auth', () => {
+  const MIGRATION = 'supabase/04_supabase_auth_migration.sql'
+  const sql = loadSql(MIGRATION)
+
+  it('peran dibaca dari app_metadata, tidak pernah dari raw_user_meta_data', () => {
+    assert.match(
+      sql,
+      /current_role\(\)[\s\S]*?auth\.jwt\(\)\s*->\s*'app_metadata'\s*->>\s*'role'/,
+      'current_role() harus membaca app_metadata dari JWT',
+    )
+    assert.doesNotMatch(
+      sql,
+      /raw_user_meta_data\s*->>\s*'role'/,
+      'raw_user_meta_data bisa diubah sendiri oleh pengguna — tidak boleh jadi sumber peran',
+    )
+  })
+
+  it('trigger pendaftaran tidak memuat peran dari metadata pengguna', () => {
+    const trigger = sql.slice(
+      sql.indexOf('handle_new_user'),
+      sql.indexOf('handle_new_user') + 900,
+    )
+    assert.ok(trigger.length > 100, 'blok trigger tidak ditemukan')
+    assert.doesNotMatch(
+      trigger,
+      /raw_user_meta_data\s*->>\s*'role'/,
+      'trigger tidak boleh memberi peran dari metadata pendaftaran',
+    )
+    assert.match(
+      trigger,
+      /'\{role\}'\s*,\s*'"admin"'/,
+      'peran default harus admin, bukan owner',
+    )
+  })
+
+  it('fungsi SECURITY DEFINER memverifikasi peran pemanggil', () => {
+    const blocks = sql.split(/create or replace function/i).slice(1)
+    const unguarded: string[] = []
+
+    for (const block of blocks) {
+      const name = block.match(/function\s+(?:public\.)?([a-z0-9_]+)/i)?.[1] ?? '?'
+      // Pengecualian, dengan alasan yang jelas:
+      //   handle_new_user, touch_updated_at — trigger internal, dipanggil
+      //     database, bukan pemanggil dari jaringan.
+      //   bootstrap_owner — memang tidak bisa memakai current_role(), karena
+      //     belum ada owner saat pertama kali dipanggil. Penggantinya adalah
+      //     pemeriksaan "owner sudah ada" yang diuji terpisah di bawah.
+      if (['handle_new_user', 'touch_updated_at', 'bootstrap_owner'].includes(name)) continue
+      if (!/security definer/i.test(block)) continue
+      if (!/current_role\(\)/.test(block)) unguarded.push(name)
+    }
+
+    assert.deepEqual(
+      unguarded,
+      [],
+      'setiap SECURITY DEFINER yang bisa dipanggil klien wajib cek current_role()',
+    )
+  })
+
+  it('grant hanya ke authenticated, tidak pernah ke anon', () => {
+    assert.doesNotMatch(
+      sql,
+      /grant\s+[^;]*\bto\s+anon\b/i,
+      'fungsi migrasi tidak boleh memberi akses apa pun ke anon',
+    )
+  })
+
+  it('fungsi antrean tetap tertutup untuk anon', () => {
+    for (const fn of ['next_queue_number', 'create_queue_entry']) {
+      assert.match(
+        sql,
+        new RegExp(`grant\\s+execute\\s+on\\s+function\\s+${fn}\\b[^;]*to\\s+authenticated`, 'i'),
+        `${fn} harus di-grant ke authenticated`,
+      )
+    }
+  })
+
+  it('bootstrap_owner menolak jalan kalau owner sudah ada', () => {
+    const block = sql.slice(
+      sql.indexOf('bootstrap_owner'),
+      sql.indexOf('bootstrap_owner') + 1200,
+    )
+    assert.match(
+      block,
+      /if\s+v_existing\s*>\s*0\s+then[\s\S]*?raise exception/i,
+      'bootstrap_owner harus menolak kalau owner sudah ada',
+    )
+  })
+
+  it('owner terakhir tidak bisa kehilangan peran', () => {
+    const block = sql.slice(sql.indexOf('set_user_role'), sql.indexOf('set_user_role') + 1400)
+    assert.match(
+      block,
+      /owner terakhir/i,
+      'set_user_role harus melindungi owner terakhir',
+    )
+  })
+})

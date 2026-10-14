@@ -22,6 +22,7 @@ const FILES = [
   'supabase/00_check_grants.sql',
   'supabase/02_seed_and_fixes.sql',
   'supabase/03_fix_privileges.sql',
+  'supabase/04_supabase_auth_migration.sql',
 ]
 
 const GREEN = '\x1b[32m'
