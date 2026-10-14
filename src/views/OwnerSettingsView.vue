@@ -13,6 +13,8 @@ import {
 } from 'lucide-vue-next'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import ColorPalettePicker from '@/components/ColorPalettePicker.vue'
+import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import {
   createCategory,
   createUser,
@@ -45,6 +47,44 @@ const notice = ref<string | null>(null)
 const categories = ref<Category[]>([])
 const newCategory = ref({ name: '', color: '#6366f1', code: '' })
 const savingCategory = ref(false)
+
+/**
+ * Id kategori yang palet warnanya sedang dibuka di daftar. Hanya satu
+ * baris yang boleh terbuka pada satu waktu agar daftar tetap ringkas.
+ */
+const editingColorId = ref<string | null>(null)
+
+/**
+ * Kategori yang sedang menunggu persetujuan dari owner. `null` berarti tidak
+ * ada dialog terbuka.
+ *
+ * Menonaktifkan kategori tidak langsung dijalankan — pemanggil harus
+ * mengonfirmasi lewat dialog lebih dulu, karena kategori ini mungkin masih
+ * punya data antrian lama.
+ */
+const pendingDeactivate = ref<Category | null>(null)
+
+function requestDeactivate(c: Category) {
+  pendingDeactivate.value = c
+}
+
+function cancelDeactivate() {
+  pendingDeactivate.value = null
+}
+
+/** Pesan konfirmasi, disusun di script agar tidak perlu meloloskan tanda kutip. */
+const deactivateMessage = computed(() =>
+  pendingDeactivate.value
+    ? `Kategori "${pendingDeactivate.value.name}" tidak akan muncul lagi di dashboard ` +
+      `dan pendaftaran. Data antrian yang sudah tercatat tetap tersimpan dan bisa ` +
+      `dilihat lewat filter riwayat.`
+    : '',
+)
+
+async function confirmDeactivate() {
+  const target = pendingDeactivate.value
+  if (target) await onDeactivateCategory(target)
+}
 
 const activeCategories = computed(() => categories.value.filter((c) => c.is_active))
 const inactiveCategories = computed(() => categories.value.filter((c) => !c.is_active))
@@ -148,6 +188,8 @@ async function onDeactivateCategory(c: Category) {
     await reload()
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Gagal menonaktifkan kategori.'
+  } finally {
+    pendingDeactivate.value = null
   }
 }
 
@@ -384,34 +426,54 @@ onMounted(async () => {
               <li
                 v-for="c in activeCategories"
                 :key="c.id"
-                class="flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 px-4 py-3"
+                class="rounded-lg border border-slate-200 px-4 py-3"
                 :data-testid="`owner-category-${c.code ?? c.id}`"
               >
-                <input
-                  type="color"
-                  :value="c.color"
-                  class="h-9 w-9 cursor-pointer rounded border border-slate-300"
-                  :aria-label="`Warna ${c.name}`"
-                  @change="onCategoryColor(c.id, ($event.target as HTMLInputElement).value)"
-                />
-                <input
-                  :value="c.name"
-                  class="min-w-40 flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
-                  :aria-label="`Nama kategori ${c.name}`"
-                  @change="onCategoryName(c.id, ($event.target as HTMLInputElement).value)"
-                />
-                <span class="rounded bg-slate-100 px-2 py-0.5 text-xs font-mono text-slate-600">
-                  {{ c.code ?? '—' }}
-                </span>
-                <button
-                  type="button"
-                  class="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                  :data-testid="`deactivate-${c.code ?? c.id}`"
-                  @click="onDeactivateCategory(c)"
+                <div class="flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    class="h-9 w-9 shrink-0 cursor-pointer rounded-full border-2 border-slate-300 transition hover:border-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2"
+                    :class="editingColorId === c.id ? 'border-slate-900' : ''"
+                    :style="{ backgroundColor: c.color }"
+                    :aria-label="`Ubah warna ${c.name}`"
+                    :aria-expanded="editingColorId === c.id"
+                    :data-testid="`color-toggle-${c.code ?? c.id}`"
+                    @click="editingColorId = editingColorId === c.id ? null : c.id"
+                  />
+                  <input
+                    :value="c.name"
+                    class="min-w-40 flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
+                    :aria-label="`Nama kategori ${c.name}`"
+                    @change="onCategoryName(c.id, ($event.target as HTMLInputElement).value)"
+                  />
+                  <span
+                    class="rounded bg-slate-100 px-2 py-0.5 text-xs font-mono text-slate-600"
+                  >
+                    {{ c.code ?? '—' }}
+                  </span>
+                  <button
+                    type="button"
+                    class="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                    :data-testid="`deactivate-${c.code ?? c.id}`"
+                    @click="requestDeactivate(c)"
+                  >
+                    <Trash2 class="h-3.5 w-3.5" />
+                    Nonaktifkan
+                  </button>
+                </div>
+
+                <div
+                  v-if="editingColorId === c.id"
+                  class="mt-3 border-t border-slate-100 pt-3"
+                  :data-testid="`color-palette-${c.code ?? c.id}`"
                 >
-                  <Trash2 class="h-3.5 w-3.5" />
-                  Nonaktifkan
-                </button>
+                  <ColorPalettePicker
+                    :model-value="c.color"
+                    :test-id-prefix="`category-color-${c.code ?? c.id}`"
+                    :label="`Warna untuk ${c.name}`"
+                    @update:model-value="onCategoryColor(c.id, $event)"
+                  />
+                </div>
               </li>
             </ul>
 
@@ -427,10 +489,13 @@ onMounted(async () => {
             </h3>
             <form class="mt-3 flex flex-wrap items-end gap-3" @submit.prevent="onAddCategory">
               <div class="min-w-48 flex-1">
-                <label class="block text-xs font-medium text-slate-600">Nama</label>
+                <label class="block text-xs font-medium text-slate-600">
+                  Nama <span class="text-rose-600">*</span>
+                </label>
                 <input
                   v-model="newCategory.name"
                   type="text"
+                  required
                   maxlength="60"
                   data-testid="new-category-name"
                   class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
@@ -438,27 +503,32 @@ onMounted(async () => {
                 />
               </div>
               <div>
-                <label class="block text-xs font-medium text-slate-600">Kode</label>
+                <label class="block text-xs font-medium text-slate-600">
+                  Kode <span class="text-rose-600">*</span>
+                </label>
                 <input
                   v-model="newCategory.code"
                   type="text"
+                  required
                   maxlength="20"
                   data-testid="new-category-code"
                   class="mt-1 w-28 rounded-lg border border-slate-300 px-3 py-2 text-sm"
                   placeholder="RJ"
                 />
               </div>
-              <div>
+              <div class="w-full">
                 <label class="block text-xs font-medium text-slate-600">Warna</label>
-                <input
-                  v-model="newCategory.color"
-                  type="color"
-                  class="mt-1 h-9 w-16 cursor-pointer rounded border border-slate-300"
-                />
+                <div class="mt-1">
+                  <ColorPalettePicker
+                    v-model="newCategory.color"
+                    test-id-prefix="new-category-color"
+                    label="Warna kategori baru"
+                  />
+                </div>
               </div>
               <button
                 type="submit"
-                :disabled="savingCategory || !newCategory.name.trim()"
+                :disabled="savingCategory || !newCategory.name.trim() || !newCategory.code.trim()"
                 data-testid="add-category"
                 class="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
               >
@@ -810,5 +880,16 @@ onMounted(async () => {
         </section>
       </template>
     </main>
+
+    <ConfirmDialog
+      :open="pendingDeactivate !== null"
+      title="Nonaktifkan kategori?"
+      :message="deactivateMessage"
+      confirm-label="Ya, nonaktifkan"
+      cancel-label="Batal"
+      destructive
+      @cancel="cancelDeactivate"
+      @confirm="confirmDeactivate"
+    />
   </div>
 </template>

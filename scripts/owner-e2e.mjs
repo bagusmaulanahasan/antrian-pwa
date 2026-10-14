@@ -250,6 +250,36 @@ try {
     await page.type(testid('new-category-name'), 'Konsultasi')
     await page.type(testid('new-category-code'), 'KONS')
 
+    // Warna dipilih dari palet (satu klik), bukan dialog eyedropper bawaan browser.
+    const swatchIds = await page.$$eval('[data-testid^="new-category-color-"]', (els) =>
+      els.map((el) => el.getAttribute('data-testid')),
+    )
+    check(swatchIds.length === 14, `14 warna siap pilih tampil (dapat ${swatchIds.length})`)
+    check(
+      new Set(swatchIds).size === swatchIds.length,
+      'tidak ada warna duplikat di palet',
+      swatchIds.join(', '),
+    )
+
+    // Nama dan Kode wajib diisi.
+    const requiredFlags = await page.evaluate(() => {
+      const name = document.querySelector('[data-testid="new-category-name"]')
+      const code = document.querySelector('[data-testid="new-category-code"]')
+      return { name: name?.required ?? false, code: code?.required ?? false }
+    })
+    check(requiredFlags.name, 'input Nama wajib diisi')
+    check(requiredFlags.code, 'input Kode wajib diisi')
+
+    const noNativePicker = (await page.$('[data-testid="new-category-name"] ~ * input[type="color"]')) === null
+    check(noNativePicker, 'input type=color bawaan browser tidak lagi dipakai')
+
+    await page.click(testid('new-category-color-16a34a'))
+    const chosenMarked = await page.$eval(
+      testid('new-category-color-16a34a'),
+      (el) => el.getAttribute('aria-checked') === 'true',
+    )
+    check(chosenMarked, 'warna terpilih ditandai aria-checked')
+
     const addRes = page.waitForResponse(
       (r) => r.url().includes('/api/admin/categories') && r.request().method() === 'POST',
       { timeout: 25000 },
@@ -290,22 +320,59 @@ try {
     check(Boolean(saved), 'kategori tersimpan di database')
     check(saved?.code === 'KONS', `kode tersimpan benar (dapat "${saved?.code}")`)
     check(
+      saved?.color === '#16a34a',
+      `warna dari palet tersimpan benar (dapat "${saved?.color}")`,
+    )
+    check(
       saved?.sort_order === mockState.categories.length - 1,
       `sort_order di urutan terakhir (dapat ${saved?.sort_order})`,
     )
   }
 
   // ---------------- 3. Nonaktifkan kategori ----------------
-  section('[3] Nonaktifkan kategori (soft delete)')
+  section('[3] Nonaktifkan kategori (soft delete) dengan konfirmasi')
   {
+    await page.click(testid('deactivate-KONS'))
+
+    // Dialog konfirmasi harus muncul sebelum request apa pun dikirim.
+    await page.waitForSelector('[data-testid="confirm-dialog"][open]', { timeout: 10000 })
+    check(true, 'dialog konfirmasi muncul sebelum menonaktifkan')
+
+    const dialogText = await page.$eval('[data-testid="confirm-dialog"]', (el) => el.innerText)
+    check(dialogText.includes('Nonaktifkan kategori?'), 'judul konfirmasi benar')
+    check(dialogText.includes('Konsultasi'), 'konfirmasi menyebut nama kategori', dialogText)
+
+    // Batal: kategori harus tetap aktif dan tidak ada request DELETE.
+    let deleteCalled = false
+    page.on('response', (r) => {
+      if (r.url().includes('/api/admin/categories/') && r.request().method() === 'DELETE') {
+        deleteCalled = true
+      }
+    })
+
+    await page.click(testid('confirm-cancel'))
+    await page.waitForFunction(
+      () => !document.querySelector('[data-testid="confirm-dialog"][open]'),
+      { timeout: 8000 },
+    ).catch(() => {})
+    await new Promise((r) => setTimeout(r, 300))
+    check(!deleteCalled, 'batal tidak mengirim request DELETE')
+    check(
+      mockState.categories.find((c) => c.code === 'KONS')?.is_active !== false,
+      'kategori tetap aktif setelah batal',
+    )
+
+    // Konfirmasi: baru sekarang request DELETE dikirim.
+    await page.click(testid('deactivate-KONS'))
+    await page.waitForSelector('[data-testid="confirm-dialog"][open]', { timeout: 10000 })
     const deactivateRes = page.waitForResponse(
       (r) => r.url().includes('/api/admin/categories/') && r.request().method() === 'DELETE',
       { timeout: 25000 },
     )
-    await page.click(testid('deactivate-KONS'))
+    await page.click(testid('confirm-accept'))
     await deactivateRes
     await new Promise((r) => setTimeout(r, 200))
-    check(true, 'kategori hilang dari daftar aktif')
+    check(deleteCalled, 'konfirmasi mengirim request DELETE')
 
     const saved = mockState.categories.find((c) => c.code === 'KONS')
     check(saved?.is_active === false, 'is_active = false (soft delete, data tetap ada)')
