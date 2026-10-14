@@ -111,3 +111,10 @@ Hindari mengulangi:
 - **Jangan commit artefak build.** `dist-e2e-*` harus tetap di `.gitignore`.
 - **Nilai env di-inline saat build.** Mengubah `.env` tanpa build ulang tidak
   berpengaruh; pada `npm run dev` pun restart server setelah mengubah `.env`.
+- **Komentar SQL harus satu baris.** Jangan pakai blok `=====` atau penjelasan
+  panjang. Yang perlu ditulis hanya keputusan yang tidak terbaca dari kodenya
+  (kenapa grant dicabut, kenapa urutan fungsi penting). SQL dibaca banyak orang;
+  dekorasi hanya menambah noise.
+- **`node:test` bisa melaporkan suite berisi 0 test tanpa error.** Kalau jumlah
+  test tidak bertambah setelah menambah test baru, berarti suite-nya tidak
+  benar-benar jalan — cek scoping `const` di dalam `describe`.

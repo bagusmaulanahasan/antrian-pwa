@@ -342,19 +342,25 @@ describe('Invariant migrasi Supabase Auth', () => {
   })
 
   it('fungsi SECURITY DEFINER memverifikasi peran pemanggil', () => {
-    const blocks = sql.split(/create or replace function/i).slice(1)
+    const blocks = sql.split(/create\s+or\s+replace\s+function/i).slice(1)
     const unguarded: string[] = []
 
     for (const block of blocks) {
-      const name = block.match(/function\s+(?:public\.)?([a-z0-9_]+)/i)?.[1] ?? '?'
+      // Nama fungsi ada tepat setelah titik split. Mencari kata
+      // "function" kedua hanya menghasilkan tebakan dari baris
+      // grant/revoke — itu rapuh dan pernah salah klasifikasi.
+      const name = block.trim().match(/^(?:public\.)?([a-z0-9_]+)/i)?.[1] ?? '?'
+
       // Pengecualian, dengan alasan yang jelas:
       //   handle_new_user, touch_updated_at — trigger internal, dipanggil
       //     database, bukan pemanggil dari jaringan.
-      //   bootstrap_owner — memang tidak bisa memakai current_role(), karena
-      //     belum ada owner saat pertama kali dipanggil. Penggantinya adalah
-      //     pemeriksaan "owner sudah ada" yang diuji terpisah di bawah.
+      //   bootstrap_owner — memang tidak bisa memakai current_role(),
+      //     karena belum ada owner saat pertama kali dipanggil.
+      //     Penggantinya adalah pemeriksaan "owner sudah ada" yang
+      //     diuji terpisah di bawah.
       if (['handle_new_user', 'touch_updated_at', 'bootstrap_owner'].includes(name)) continue
-      if (!/security definer/i.test(block)) continue
+
+      if (!/security\s+definer/i.test(block)) continue
       if (!/current_role\(\)/.test(block)) unguarded.push(name)
     }
 
